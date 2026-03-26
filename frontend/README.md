@@ -36,7 +36,7 @@ npm run dev
 | `VITE_API_BASE_URL` | 백엔드 API 주소 | `http://localhost:8000` (로컬) |
 | `VITE_KAKAO_MAP_API_KEY` | 카카오 맵 JavaScript 키 | 카카오 개발자 콘솔에서 발급 |
 
-> 로컬 개발 시 `VITE_API_BASE_URL`은 백엔드 로컬 주소를, dev/prod 배포 시에는 각 환경의 API Gateway 주소를 사용합니다.
+> 로컬 개발 시 `VITE_API_BASE_URL`은 백엔드 로컬 주소를, dev/prod 배포 시에는 각 환경의 Lambda Function URL을 사용합니다.
 
 ---
 
