@@ -3,7 +3,7 @@
 Vue.js + FastAPI + AWS Serverless 기반의 날씨 맞춤 추천 서비스.
 모노레포 구조로 프론트엔드, 백엔드, 데이터 파이프라인을 하나의 레포에서 관리합니다.
 
-> **아키텍처 상세 자료**: [Canva 다이어그램](https://www.canva.com/design/DAHEpM74gSI/j0t2oPmaRZED7YnGqsAEmA/edit?utm_content=DAHEpM74gSI&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
+> **아키텍처 상세 자료**: [Canva 다이어그램](https://www.canva.com/design/DAHEpM74gSI/j0t2oPmaRZED7YnGqsAEmA/edit?utm_content=DAHEpM74gSI&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)<br/>
 > **화면 구성 목업**: [Canva_화면 구성 목업](https://www.canva.com/design/DAHE8EaiVWs/tXiPm_2jMnMIUDvkk83_xQ/edit?utm_content=DAHE8EaiVWs&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
 
 ---
