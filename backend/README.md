@@ -1,6 +1,6 @@
 # backend/
 
-FastAPI + Mangum 기반 백엔드 API. AWS Lambda 위에서 실행되며, API Gateway를 통해 외부에 노출됩니다.
+FastAPI + Mangum 기반 백엔드 API. AWS Lambda 위에서 실행되며, Lambda Function URL을 통해 외부에 노출됩니다.
 
 ---
 
@@ -11,6 +11,7 @@ FastAPI + Mangum 기반 백엔드 API. AWS Lambda 위에서 실행되며, API Ga
 | Python 3.11+ | 런타임 |
 | FastAPI | REST API 프레임워크 |
 | Mangum | FastAPI → Lambda 어댑터 |
+| Lambda Function URL | API 엔드포인트 (API Gateway 대신 사용) |
 | pytest | 테스트 프레임워크 |
 | boto3 | AWS SDK (DynamoDB, S3 접근) |
 
@@ -88,9 +89,18 @@ CI/CD 파이프라인에서 pytest가 실패하면 배포가 중단됩니다. PR
 
 ```python
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 app = FastAPI()
+
+# CORS 설정 (Lambda Function URL 사용 시 필요)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],       # 배포 시 실제 도메인으로 제한
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 라우터 등록
 # app.include_router(...)
@@ -99,6 +109,41 @@ handler = Mangum(app)  # Lambda 진입점
 ```
 
 로컬에서는 `uvicorn`으로 실행하고, Lambda에서는 `handler`가 진입점이 됩니다. SAM 템플릿의 `Handler` 값이 `app.main.handler`로 설정되어 있는지 확인하세요.
+
+---
+
+## Lambda Function URL 참고사항
+
+본 프로젝트는 API Gateway 대신 **Lambda Function URL**을 사용합니다.
+
+| 항목 | Lambda Function URL | API Gateway |
+|------|-------------------|-------------|
+| 비용 | Lambda 요청 수에 포함 (추가 과금 없음) | 별도 과금 (100만 요청당 $3.50) |
+| 설정 | SAM 템플릿에 `FunctionUrlConfig` 추가 | API 리소스/메서드 정의 필요 |
+| 제한 | throttling, API 키, 사용량 플랜 없음 | 모두 지원 |
+
+현재 프로젝트 규모에서는 Lambda Function URL로 충분하며, 나중에 인증/속도 제한이 필요해지면 CloudFront 단에서 처리하거나 API Gateway로 전환할 수 있습니다.
+
+### SAM 템플릿 Function URL 설정 예시
+
+```yaml
+Resources:
+  BackendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.main.handler
+      Runtime: python3.11
+      CodeUri: .
+      FunctionUrlConfig:
+        AuthType: NONE            # 퍼블릭 접근 허용
+        Cors:
+          AllowOrigins:
+            - "*"                  # 배포 시 실제 도메인으로 제한
+          AllowMethods:
+            - "*"
+          AllowHeaders:
+            - "*"
+```
 
 ---
 
@@ -111,6 +156,8 @@ sam build
 sam deploy --config-env dev   # 개발 환경
 sam deploy --config-env prod  # 운영 환경
 ```
+
+배포 완료 후 출력되는 Function URL이 API 엔드포인트입니다. 프론트엔드의 `VITE_API_BASE_URL`에 이 값을 설정하세요.
 
 ### Lambda 패키징 주의사항
 

@@ -69,8 +69,10 @@ parameter_overrides = "Environment=prod"
 | DynamoDB 테이블 | 실시간 날씨 데이터 저장 | `template.yaml` |
 | EventBridge Rule | 데이터 수집 스케줄 | `data_pipeline/template.yaml` |
 | Lambda 함수 | 백엔드 API + 데이터 수집 | 각 영역 `template.yaml` |
-| API Gateway | REST API 엔드포인트 | `backend/template.yaml` |
+| Lambda Function URL | 백엔드 API 엔드포인트 | `backend/template.yaml` |
 | Athena 테이블 | S3 데이터 분석용 | `athena_ddl/*.sql` |
+
+> 본 프로젝트는 API Gateway를 사용하지 않습니다. 백엔드 API는 Lambda Function URL로 노출되며, SAM 템플릿에서 `FunctionUrlConfig`로 설정합니다.
 
 ---
 
