@@ -1,0 +1,28 @@
+name: Deploy Backend (FastAPI)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**" # backend 폴더 수정 시에만 실행
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt -t . # Lambda 배포용 패키징
+          zip -r ../deploy.zip .
+
+      # 여기에 AWS CLI나 Serverless Framework 배포 명령어를 추가하세요.
+      - name: Dummy Deploy Step
+        run: echo "FastAPI Backend is ready to be deployed to Lambda!"

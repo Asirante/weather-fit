@@ -1,0 +1,62 @@
+# ===========================
+# 환경 변수 및 시크릿
+# ===========================
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.pem
+*.key
+
+# ===========================
+# AWS
+# ===========================
+.aws/
+.aws-sam/
+samconfig.toml.bak
+packaged.yaml
+
+# ===========================
+# Node.js (frontend)
+# ===========================
+node_modules/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ===========================
+# Python (backend, data_pipeline)
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# ===========================
+# IDE / 에디터
+# ===========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===========================
+# OS
+# ===========================
+.DS_Store
+Desktop.ini
+ehthumbs.db

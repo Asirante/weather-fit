@@ -1,0 +1,15 @@
+name: Deploy Data Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data_pipeline/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy ETL Lambda
+        run: echo "Deploying ETL logic to AWS Lambda..."

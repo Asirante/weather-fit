@@ -1,0 +1,22 @@
+name: Deploy Frontend (Vue.js)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install & Build
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Dummy Deploy Step
+        run: echo "Vue.js (Vite) dist files are ready!"
