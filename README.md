@@ -177,7 +177,7 @@ sam deploy --config-env <dev|prod>
 | **Development** | `develop` | `myapp-dev-frontend` | Lambda Function URL (dev) |
 | **Production** | `main` | `myapp-prod-frontend` | Lambda Function URL (prod) |
 
-> ⚠️ **리전은 하나로 통일합니다.** 콘솔에서 작업할 때 리전이 다른 곳으로 설정되어 있지 않은지 반드시 확인하세요.
+> ⚠️ **리전은 `ap-northeast-2`(서울)로 통일합니다.** 콘솔에서 작업할 때 리전이 다른 곳으로 설정되어 있지 않은지 반드시 확인하세요.
 
 ---
 
