@@ -3,8 +3,8 @@
 Vue.js + FastAPI + AWS Serverless 기반의 날씨 맞춤 추천 서비스.
 모노레포 구조로 프론트엔드, 백엔드, 데이터 파이프라인을 하나의 레포에서 관리합니다.
 
-> **아키텍처 상세 자료**: [Canva 다이어그램](https://www.canva.com/design/DAHEpM74gSI/)
-> **초기 세팅 가이드**: [`docs/AWS_GitHub_초기세팅_가이드.pdf`](./docs/AWS_GitHub_초기세팅_가이드.pdf)
+> **아키텍처 상세 자료**: [Canva 다이어그램](https://www.canva.com/design/DAHEpM74gSI/j0t2oPmaRZED7YnGqsAEmA/edit?utm_content=DAHEpM74gSI&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
+> **화면 구성 목업**: [Canva_화면 구성 목업](https://www.canva.com/design/DAHE8EaiVWs/tXiPm_2jMnMIUDvkk83_xQ/edit?utm_content=DAHE8EaiVWs&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
 
 ---
 
@@ -176,7 +176,7 @@ sam deploy --config-env <dev|prod>
 | **Development** | `develop` | `myapp-dev-frontend` | `https://dev-api.example.com` |
 | **Production** | `main` | `myapp-prod-frontend` | `https://api.example.com` |
 
-> ⚠️ **리전은 `ap-northeast-2`(서울)로 통일합니다.** 콘솔에서 작업할 때 리전이 다른 곳으로 설정되어 있지 않은지 반드시 확인하세요.
+> ⚠️ **리전은 하나로 통일합니다.** 콘솔에서 작업할 때 리전이 다른 곳으로 설정되어 있지 않은지 반드시 확인하세요.
 
 ---
 
