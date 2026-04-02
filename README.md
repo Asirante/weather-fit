@@ -288,7 +288,7 @@ ZIP 배포는 압축 해제 시 250MB 제한이 있습니다. 의존성이 많�
 ### `sam deploy`에서 권한 에러
 
 - 현재 AWS CLI 프로필의 리전이 `ap-northeast-2`인지 확인 → `aws configure get region`
-- IAM 권한이 부족한 경우 인프라 담당자에게 요청하세요
+- IAM 권한이 부족한 경우 백엔드&인프라 담당자에게 요청하세요
 - OIDC Role의 Trust Policy에 본인 브랜치가 허용 조건에 포함되어 있는지 확인하세요
 
 ### 로컬에서 DynamoDB 접근이 안 돼요
@@ -301,7 +301,7 @@ ZIP 배포는 압축 해제 시 250MB 제한이 있습니다. 의존성이 많�
 
 ### Bedrock 호출 시 AccessDeniedException
 
-Bedrock 모델 접근 권한이 없는 경우 발생합니다. AWS 콘솔 → Bedrock → Model access에서 Claude 3.5 Haiku 모델이 활성화되어 있는지 확인하세요. 모델 접근 요청은 인프라 담당자가 처리합니다.
+Bedrock 모델 접근 권한이 없는 경우 발생합니다. AWS 콘솔 → Bedrock → Model access에서 Claude 3.5 Haiku 모델이 활성화되어 있는지 확인하세요. 모델 접근 요청은 백엔드&인프라 담당자가 처리합니다.
 
 ---
 
@@ -309,10 +309,10 @@ Bedrock 모델 접근 권한이 없는 경우 발생합니다. AWS 콘솔 → Be
 
 | 담당 | AWS 권한 | 주요 작업 |
 |------|---------|----------|
-| Frontend | S3, CloudFront | Vue.js UI, 반응형, 지도 연동 |
-| Backend | Lambda, DynamoDB, Bedrock | API 설계, AI 추천 로직, 캐시 조회/미스 처리 |
-| Data | Lambda, EventBridge, S3, Glue, Athena, Bedrock | 기상 데이터 수집, 배치 추론, 캐싱 파이프라인 |
-| Infra | IAM, CloudFormation, SAM, CloudWatch | 인프라 관리, 모니터링, 권한 관리 |
-| PM | 읽기 전용 | 일정 관리, 이슈 트래킹 |
+| **테크니컬 PM & FinOps** | IAM, Budgets, Cost Explorer (읽기) | 스프린트 일정 관리, 예산 방어, 비용 최적화 성과 도출 |
+| **데이터 엔지니어** | Lambda, EventBridge, DynamoDB, S3 | 기상청/에어코리아 공공데이터 실시간 수집 파이프라인 구축 |
+| **분석 엔지니어** | Glue, Athena, Bedrock, S3 | S3 데이터 가공, 대시보드 통계 추출, AI 배치 추론 파이프라인 |
+| **백엔드 & 인프라** | Lambda, DynamoDB, Bedrock, SAM, CloudFormation, CloudWatch | API 개발, AI 추천 로직, CI/CD 구축, 인프라 관리 |
+| **프론트엔드 & 엣지** | S3, CloudFront | Vue.js 대시보드, Chart.js 시각화, 카카오맵 연동 |
 
-본인 역할 범위 외의 AWS 리소스를 직접 수정해야 할 경우, 반드시 인프라 담당자에게 먼저 확인하세요.
+본인 역할 범위 외의 AWS 리소스를 직접 수정해야 할 경우, 반드시 백엔드&인프라 담당자에게 먼저 확인하세요.
