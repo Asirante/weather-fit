@@ -1,6 +1,7 @@
 # 날씨 기반 생활 추천 서비스
 
 Vue.js + FastAPI + AWS Serverless 기반의 날씨 맞춤 추천 서비스.
+Amazon Bedrock(Claude 3.5 Haiku)을 활용한 AI 추천과 DynamoDB 캐싱으로 비용 효율적인 응답을 제공합니다.
 모노레포 구조로 프론트엔드, 백엔드, 데이터 파이프라인을 하나의 레포에서 관리합니다.
 
 > **아키텍처 상세 자료**: [Canva 다이어그램](https://www.canva.com/design/DAHEpM74gSI/j0t2oPmaRZED7YnGqsAEmA/edit?utm_content=DAHEpM74gSI&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)<br/>
@@ -12,6 +13,7 @@ Vue.js + FastAPI + AWS Serverless 기반의 날씨 맞춤 추천 서비스.
 ## 목차
 
 - [프로젝트 구조](#프로젝트-구조)
+- [추천 시스템 아키텍처](#추천-시스템-아키텍처)
 - [로컬 개발 환경 설정](#로컬-개발-환경-설정)
 - [환경 변수](#환경-변수)
 - [브랜치 전략 및 PR 규칙](#브랜치-전략-및-pr-규칙)
@@ -34,7 +36,7 @@ project-root/
 │   └── deploy-data-pipeline.yml
 ├── frontend/               # Vue.js (Vite)
 ├── backend/                # FastAPI + Mangum
-├── data_pipeline/          # EventBridge + Lambda ETL
+├── data_pipeline/          # 기상 데이터 수집 + AI 배치 추론
 ├── infra/                  # SAM template, Athena DDL
 ├── docs/                   # 팀 공유 문서
 ├── .gitignore
@@ -43,6 +45,33 @@ project-root/
 
 각 폴더(`frontend/`, `backend/`, `data_pipeline/`, `infra/`)에는 해당 영역의 별도 README가 있습니다.
 인프라 정의 파일은 `infra/`에서 관리하며, 임의로 직접 콘솔에서 리소스를 수정하지 마세요.
+
+---
+
+## 추천 시스템 아키텍처
+
+기존 룰 기반 로직 대신 **Amazon Bedrock (Claude 3.5 Haiku)** 를 사용한 AI 추천 시스템입니다.
+
+### 핵심 구조: AI 배치 추론 + DynamoDB 캐싱
+
+```
+[전날 자정]
+기상청 예보 수집 → 유니크 기상 패턴 추출 (중복 제거)
+  → Bedrock 배치 추론 (수십 개 패턴을 한 번에 처리)
+  → DynamoDB에 캐싱 (기상 조건 = PK, AI 답변 = Value, TTL 영구)
+
+[사용자 요청 시]
+사용자 위치 날씨 조회 → DynamoDB에서 캐싱된 답변 조회 → 즉시 응답
+  → 캐시 미스(새로운 기상 패턴) 시 Bedrock 실시간 호출 (프롬프트 캐싱 적용)
+```
+
+### 이 구조의 장점
+
+- **비용 절감**: 대부분의 요청이 DynamoDB 캐시에서 처리되어 Bedrock 호출 최소화
+- **응답 속도**: 캐시 히트 시 AI 추론 대기 없이 즉시 응답
+- **캐시 미스 대응**: 프롬프트 캐싱으로 시스템 지시어 처리를 건너뛰어 토큰 비용과 응답 시간 절감
+- **품질**: 프롬프트 정제를 통한 가이드라인 준수로 환각 방지, 공식 기준 기반 답변 제공
+- **UX**: 룰 기반 대비 더 자연스럽고 상세한 맞춤 추천
 
 ---
 
@@ -105,6 +134,11 @@ VITE_KAKAO_MAP_API_KEY=
 DYNAMODB_TABLE_NAME=
 S3_BUCKET_NAME=
 WEATHER_API_KEY=
+BEDROCK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
+
+# data_pipeline/.env
+BEDROCK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
+DYNAMODB_CACHE_TABLE_NAME=
 ```
 
 새로운 환경 변수를 추가할 때는 반드시 `.env.example`도 함께 업데이트해 주세요.
@@ -185,8 +219,16 @@ sam deploy --config-env <dev|prod>
 
 ```
 Frontend:  S3 (정적 호스팅) → CloudFront (CDN + HTTPS)
-Backend:   Lambda Function URL (FastAPI + Mangum) → DynamoDB
-Data:      EventBridge (스케줄) → Lambda (수집) → S3 (원본) → Glue (ETL) → Athena (분석)
+
+Backend:   Lambda Function URL (FastAPI + Mangum)
+             → DynamoDB (캐싱된 AI 답변 조회)
+             → Bedrock (캐시 미스 시 실시간 호출, 프롬프트 캐싱 적용)
+
+Data:      EventBridge (매일 자정)
+             → Lambda (기상청 예보 수집 + 유니크 패턴 추출)
+             → Bedrock 배치 추론 (수십 개 패턴 일괄 처리)
+             → DynamoDB (AI 답변 캐싱, TTL 영구)
+             → S3 (원본 데이터) → Glue (ETL) → Athena (분석)
 ```
 
 ### 프리 티어 한도 (주요 서비스)
@@ -197,12 +239,11 @@ Data:      EventBridge (스케줄) → Lambda (수집) → S3 (원본) → Glue 
 | DynamoDB | 저장 25GB + R/W 각 25단위 | 무기한 |
 | S3 | 저장 5GB | 12개월 |
 | CloudFront | 전송 1TB + 요청 1,000만/월 | 무기한 |
+| **Bedrock** | **프리 티어 없음** | 입출력 토큰 기반 과금 |
 | **Glue** | **프리 티어 없음** | DPU-시간 과금 |
 | **Athena** | **프리 티어 없음** | 스캔 TB당 $5 |
 
-> Lambda Function URL은 Lambda 요청 수에 포함되어 별도 과금이 없습니다. API Gateway를 사용하지 않으므로 해당 비용이 발생하지 않습니다.
-
-Glue, Athena 작업 시 불필요한 쿼리를 반복하지 않도록 주의하세요. Parquet 포맷을 사용하면 Athena 비용을 크게 줄일 수 있습니다.
+> **Bedrock 비용 관리**: 배치 추론으로 대부분의 패턴을 사전 캐싱하고, 캐시 미스 시에는 프롬프트 캐싱을 적용하여 토큰 비용을 절감합니다. 프롬프트 변경이나 새 모델 테스트 시 예상 비용을 팀에 공유해 주세요.
 
 ---
 
@@ -216,7 +257,7 @@ feat: 날씨 API 응답에 미세먼지 데이터 추가
 fix: CloudFront 캐시로 인한 구버전 노출 문제 수정
 docs: README에 로컬 개발 환경 설정 추가
 refactor: 추천 로직 함수 분리
-test: 의류 추천 로직 단위 테스트 추가
+test: AI 추천 캐싱 로직 단위 테스트 추가
 chore: GitHub Actions Python 버전 업데이트
 ```
 
@@ -259,6 +300,10 @@ ZIP 배포는 압축 해제 시 250MB 제한이 있습니다. 의존성이 많�
 
 프론트엔드에서 Lambda Function URL을 직접 호출할 때 CORS 에러가 발생할 수 있습니다. FastAPI 앱에서 `CORSMiddleware`를 설정하고, SAM 템플릿의 `FunctionUrlConfig`에서 `Cors` 속성을 적절히 지정해야 합니다. CloudFront를 통해 프록시하는 경우에는 동일 도메인이므로 CORS 이슈가 없습니다.
 
+### Bedrock 호출 시 AccessDeniedException
+
+Bedrock 모델 접근 권한이 없는 경우 발생합니다. AWS 콘솔 → Bedrock → Model access에서 Claude 3.5 Haiku 모델이 활성화되어 있는지 확인하세요. 모델 접근 요청은 인프라 담당자가 처리합니다.
+
 ---
 
 ## 팀 역할 및 권한
@@ -266,8 +311,8 @@ ZIP 배포는 압축 해제 시 250MB 제한이 있습니다. 의존성이 많�
 | 담당 | AWS 권한 | 주요 작업 |
 |------|---------|----------|
 | Frontend | S3, CloudFront | Vue.js UI, 반응형, 지도 연동 |
-| Backend | Lambda, DynamoDB | API 설계, 비즈니스 로직 |
-| Data | Lambda, EventBridge, S3, Glue, Athena | 수집/ETL/분석 파이프라인 |
+| Backend | Lambda, DynamoDB, Bedrock | API 설계, AI 추천 로직, 캐시 조회/미스 처리 |
+| Data | Lambda, EventBridge, S3, Glue, Athena, Bedrock | 기상 데이터 수집, 배치 추론, 캐싱 파이프라인 |
 | Infra | IAM, CloudFormation, SAM, CloudWatch | 인프라 관리, 모니터링, 권한 관리 |
 | PM | 읽기 전용 | 일정 관리, 이슈 트래킹 |
 

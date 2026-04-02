@@ -1,6 +1,7 @@
 # backend/
 
 FastAPI + Mangum 기반 백엔드 API. AWS Lambda 위에서 실행되며, Lambda Function URL을 통해 외부에 노출됩니다.
+사용자 요청 시 DynamoDB에서 캐싱된 AI 추천을 조회하고, 캐시 미스 시 Bedrock를 실시간 호출합니다.
 
 ---
 
@@ -11,9 +12,26 @@ FastAPI + Mangum 기반 백엔드 API. AWS Lambda 위에서 실행되며, Lambda
 | Python 3.11+ | 런타임 |
 | FastAPI | REST API 프레임워크 |
 | Mangum | FastAPI → Lambda 어댑터 |
-| Lambda Function URL | API 엔드포인트 (API Gateway 대신 사용) |
+| Lambda Function URL | API 엔드포인트 |
+| Amazon Bedrock | AI 추천 생성 (Claude 3.5 Haiku) |
+| Amazon DynamoDB | AI 답변 캐시 저장소 |
+| boto3 | AWS SDK (DynamoDB, S3, Bedrock 접근) |
 | pytest | 테스트 프레임워크 |
-| boto3 | AWS SDK (DynamoDB, S3 접근) |
+
+---
+
+## 추천 응답 흐름
+
+```
+사용자 요청 (위치 + 날씨)
+  → 기상 조건으로 DynamoDB 파티션 키 생성
+  → DynamoDB 캐시 조회
+    → 캐시 히트: 저장된 AI 답변 즉시 반환
+    → 캐시 미스: Bedrock 실시간 호출 (프롬프트 캐싱 적용)
+      → 응답을 DynamoDB에 저장 후 반환
+```
+
+대부분의 기상 패턴은 전날 자정 배치 추론으로 사전 캐싱되어 있으므로, 실시간 Bedrock 호출은 예외적인 경우에만 발생합니다.
 
 ---
 
@@ -38,9 +56,10 @@ API 문서는 `http://localhost:8000/docs` (Swagger UI)에서 확인할 수 있�
 
 | 변수명 | 설명 | 예시 |
 |--------|------|------|
-| `DYNAMODB_TABLE_NAME` | 날씨 데이터 테이블명 | `weather-data-dev` |
+| `DYNAMODB_TABLE_NAME` | AI 추천 캐시 테이블명 | `weather-recommend-dev` |
 | `S3_BUCKET_NAME` | 원본 데이터 버킷명 | `myapp-dev-raw-data` |
 | `WEATHER_API_KEY` | 기상청 API 인증키 | 공공데이터포털에서 발급 |
+| `BEDROCK_MODEL_ID` | Bedrock 모델 ID | `anthropic.claude-3-5-haiku-20241022-v1:0` |
 
 ---
 
@@ -51,12 +70,18 @@ backend/
 ├── app/
 │   ├── main.py           # FastAPI 앱 + Mangum 핸들러
 │   ├── routers/          # 엔드포인트별 라우터
-│   ├── services/         # 비즈니스 로직
+│   ├── services/
+│   │   ├── recommend.py  # 추천 로직 (캐시 조회 → Bedrock 호출)
+│   │   ├── bedrock.py    # Bedrock 클라이언트 및 프롬프트 관리
+│   │   ├── cache.py      # DynamoDB 캐시 읽기/쓰기
+│   │   └── weather.py    # 기상 데이터 조회
 │   ├── models/           # Pydantic 스키마
+│   ├── prompts/          # 시스템 프롬프트 템플릿
 │   ├── utils/            # 유틸리티 함수
 │   └── config.py         # 환경 변수 로드
 ├── tests/
-│   ├── test_weather.py
+│   ├── test_recommend.py
+│   ├── test_cache.py
 │   └── conftest.py
 ├── requirements.txt
 ├── template.yaml          # SAM 템플릿 (백엔드용)
@@ -73,7 +98,7 @@ backend/
 pytest
 
 # 특정 파일
-pytest tests/test_weather.py
+pytest tests/test_recommend.py
 
 # 커버리지 포함
 pytest --cov=app
@@ -83,67 +108,26 @@ CI/CD 파이프라인에서 pytest가 실패하면 배포가 중단됩니다. PR
 
 ---
 
-## Mangum 핸들러
+## Bedrock 연동 참고사항
 
-`app/main.py`에서 FastAPI 앱을 Mangum으로 감싸서 Lambda 핸들러로 내보냅니다.
+### 프롬프트 캐싱
 
-```python
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
+캐시 미스로 Bedrock를 실시간 호출할 때, **프롬프트 캐싱**을 적용하여 반복되는 시스템 지시어의 토큰 처리를 건너뜁니다. 이를 통해 토큰 비용과 응답 시간을 절감합니다.
 
-app = FastAPI()
+### 프롬프트 관리
 
-# CORS 설정 (Lambda Function URL 사용 시 필요)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],       # 배포 시 실제 도메인으로 제한
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+시스템 프롬프트는 `app/prompts/` 폴더에서 관리합니다. 프롬프트 변경 시 주의사항:
+- 변경 후 반드시 여러 기상 패턴으로 테스트하여 환각(hallucination) 발생 여부 확인
+- 공식 기준(기상청 기준, 의류 가이드라인 등)을 프롬프트에 포함하여 답변 신뢰성 확보
+- 프롬프트 변경은 PR에 변경 사유와 테스트 결과를 함께 기재
 
-# 라우터 등록
-# app.include_router(...)
+### DynamoDB 캐시 키 설계
 
-handler = Mangum(app)  # Lambda 진입점
-```
+파티션 키는 기상 조건(기온, 습도, 강수 확률 등)의 조합으로 구성됩니다. 키 설계 변경 시 기존 캐시가 무효화될 수 있으므로 데이터 팀과 반드시 협의하세요.
 
-로컬에서는 `uvicorn`으로 실행하고, Lambda에서는 `handler`가 진입점이 됩니다. SAM 템플릿의 `Handler` 값이 `app.main.handler`로 설정되어 있는지 확인하세요.
+### 로컬에서 Bedrock 테스트
 
----
-
-## Lambda Function URL 참고사항
-
-본 프로젝트는 API Gateway 대신 **Lambda Function URL**을 사용합니다.
-
-| 항목 | Lambda Function URL | API Gateway |
-|------|-------------------|-------------|
-| 비용 | Lambda 요청 수에 포함 (추가 과금 없음) | 별도 과금 (100만 요청당 $3.50) |
-| 설정 | SAM 템플릿에 `FunctionUrlConfig` 추가 | API 리소스/메서드 정의 필요 |
-| 제한 | throttling, API 키, 사용량 플랜 없음 | 모두 지원 |
-
-현재 프로젝트 규모에서는 Lambda Function URL로 충분하며, 나중에 인증/속도 제한이 필요해지면 CloudFront 단에서 처리하거나 API Gateway로 전환할 수 있습니다.
-
-### SAM 템플릿 Function URL 설정 예시
-
-```yaml
-Resources:
-  BackendFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: app.main.handler
-      Runtime: python3.11
-      CodeUri: .
-      FunctionUrlConfig:
-        AuthType: NONE            # 퍼블릭 접근 허용
-        Cors:
-          AllowOrigins:
-            - "*"                  # 배포 시 실제 도메인으로 제한
-          AllowMethods:
-            - "*"
-          AllowHeaders:
-            - "*"
-```
+로컬에서 Bedrock를 호출하려면 AWS 자격 증명이 필요합니다. dev 환경의 자격 증명을 사용하되, 불필요한 반복 호출을 피하세요 (토큰 과금). 테스트 시에는 DynamoDB 캐시 히트 시나리오 위주로 확인하고, Bedrock 직접 호출 테스트는 최소한으로 진행합니다.
 
 ---
 
@@ -157,7 +141,7 @@ sam deploy --config-env dev   # 개발 환경
 sam deploy --config-env prod  # 운영 환경
 ```
 
-배포 완료 후 출력되는 Function URL이 API 엔드포인트입니다. 프론트엔드의 `VITE_API_BASE_URL`에 이 값을 설정하세요.
+배포 완료 후 출력되는 Function URL이 API 엔드포인트입니다.
 
 ### Lambda 패키징 주의사항
 

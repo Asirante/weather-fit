@@ -66,13 +66,27 @@ parameter_overrides = "Environment=prod"
 |--------|------|----------|
 | S3 버킷 (프론트, 데이터) | 정적 파일 호스팅 + 원본 데이터 저장 | `template.yaml` |
 | CloudFront | CDN + HTTPS | `template.yaml` |
-| DynamoDB 테이블 | 실시간 날씨 데이터 저장 | `template.yaml` |
-| EventBridge Rule | 데이터 수집 스케줄 | `data_pipeline/template.yaml` |
-| Lambda 함수 | 백엔드 API + 데이터 수집 | 각 영역 `template.yaml` |
+| DynamoDB 테이블 (기상 데이터) | 실시간 날씨 데이터 저장 | `template.yaml` |
+| DynamoDB 테이블 (AI 캐시) | Bedrock AI 답변 캐싱 (TTL 영구) | `template.yaml` |
+| EventBridge Rule | 데이터 수집 + 배치 추론 스케줄 | `data_pipeline/template.yaml` |
+| Lambda 함수 | 백엔드 API + 데이터 수집 + 배치 추론 | 각 영역 `template.yaml` |
 | Lambda Function URL | 백엔드 API 엔드포인트 | `backend/template.yaml` |
 | Athena 테이블 | S3 데이터 분석용 | `athena_ddl/*.sql` |
 
-> 본 프로젝트는 API Gateway를 사용하지 않습니다. 백엔드 API는 Lambda Function URL로 노출되며, SAM 템플릿에서 `FunctionUrlConfig`로 설정합니다.
+> **Bedrock 모델 접근 권한**: Bedrock는 CloudFormation으로 관리되지 않습니다. AWS 콘솔 → Bedrock → Model access에서 Claude 3.5 Haiku 모델 접근 요청을 별도로 진행해야 합니다. 이 작업은 인프라 담당자가 처리합니다.
+
+---
+
+## DynamoDB 테이블 설계
+
+본 프로젝트에서는 DynamoDB 테이블을 두 개 사용합니다.
+
+| 테이블 | 용도 | 파티션 키 | TTL |
+|--------|------|----------|-----|
+| 기상 데이터 | 실시간 날씨 정보 저장 | 위치 + 시간 | 설정 가능 |
+| AI 캐시 | Bedrock 추천 답변 캐싱 | 기상 조건 조합 | 영구 (TTL 없음) |
+
+AI 캐시 테이블의 키 설계 변경은 기존 캐시 전체 무효화를 의미하므로, 백엔드/데이터 팀과 반드시 협의 후 진행하세요.
 
 ---
 
@@ -98,3 +112,4 @@ aws athena start-query-execution \
 - `template.yaml` 수정 후에는 `sam validate`로 문법 오류를 먼저 확인하세요.
 - CloudFormation 스택이 `ROLLBACK_COMPLETE` 상태가 되면 삭제 후 재생성해야 합니다. 이 경우 인프라 담당자에게 연락하세요.
 - IAM 권한이나 OIDC Trust Policy 변경은 반드시 인프라 담당자가 리뷰 후 적용합니다.
+- Lambda에 Bedrock 호출 권한(`bedrock:InvokeModel`)이 IAM Role에 포함되어 있는지 확인하세요.
