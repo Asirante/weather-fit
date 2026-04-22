@@ -1,13 +1,15 @@
 name: Deploy Infrastructure (S3 & DynamoDB)
 
 on:
-  # 자동 배포를 끄고, 관리자가 직접 버튼을 누를 때만 배포되게 변경
   workflow_dispatch:
     inputs:
       confirm:
         description: "인프라를 정말로 배포하시겠습니까? (yes 입력)"
         required: true
         default: "no"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   id-token: write
@@ -16,7 +18,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # 사용자가 'yes'라고 입력했을 때만 실행되도록 안전장치 추가
     if: github.event.inputs.confirm == 'yes'
 
     steps:
@@ -41,10 +42,12 @@ jobs:
         run: |
           cd infra
           sam build
+          # --s3-bucket 옵션을 통해 SAM이 관리용 스택(managed-default)을 새로 생성하지 않도록 방지합니다.
+          # 기존에 생성할 Raw Data 버킷을 임시 저장소로 활용합니다.
           sam deploy \
             --stack-name inhatc-team2-infra \
             --region us-east-1 \
-            --confirm-changeset False \
+            --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --capabilities CAPABILITY_IAM \
-            --resolve-s3
+            --s3-bucket inhatc-team2-5-raw-data
