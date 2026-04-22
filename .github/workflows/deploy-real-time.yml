@@ -1,4 +1,4 @@
-name: Deploy Real-time Pipeline (Member 5 Stack)
+name: Deploy Real-time Pipeline Code
 
 on:
   push:
@@ -18,16 +18,10 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
           aws-region: us-east-1
-      - name: SAM Build and Deploy
+      - name: Zip and Update Code
         run: |
           cd real_time
-          sam build
-          sam deploy \
-            --stack-name inhatc-team2-5-real-time \
-            --region us-east-1 \
-            --no-confirm-changeset \
-            --capabilities CAPABILITY_IAM \
-            --s3-bucket inhatc-team2-5-raw-data \
-            --parameter-overrides \
-                WeatherApiKey=${{ secrets.WEATHER_API_KEY }} \
-                AirApiKey=${{ secrets.AIR_API_KEY }}
+          zip -r ../deploy.zip .
+          aws lambda update-function-code \
+            --function-name inhatc-team2-5-real-time-dataAPI \
+            --zip-file fileb://../deploy.zip
