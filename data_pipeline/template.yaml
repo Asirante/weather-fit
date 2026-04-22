@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "Member 5 Hourly Data Pipeline Stack"
+
+Parameters:
+  WeatherApiKey:
+    Type: String
+
+Resources:
+  DataPipelineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: inhatc-team2-5-dataAPI
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      Timeout: 600
+      MemorySize: 256
+      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
+      Environment:
+        Variables:
+          WEATHER_API_KEY: !Ref WeatherApiKey
+          S3_RAW_BUCKET: inhatc-team2-5-raw-data
+      Events:
+        HourlyTrigger:
+          Type: Schedule
+          Properties:
+            Schedule: "rate(1 hour)"
+            Name: inhatc-team2-5-hourly-trigger
+      CodeUri: .
