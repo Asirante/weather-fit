@@ -1,4 +1,4 @@
-name: Deploy Infrastructure (S3 & DynamoDB)
+name: Deploy Infrastructure (Full)
 
 on:
   workflow_dispatch:
@@ -9,6 +9,7 @@ on:
         default: "no"
 
 env:
+  # Node.js 20 관련 경고 방지
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
@@ -42,12 +43,14 @@ jobs:
         run: |
           cd infra
           sam build
-          # --s3-bucket 옵션을 통해 SAM이 관리용 스택(managed-default)을 새로 생성하지 않도록 방지합니다.
-          # 기존에 생성할 Raw Data 버킷을 임시 저장소로 활용합니다.
+          # --parameter-overrides 옵션을 통해 GitHub Secrets의 값을 설계도(template.yaml)의 파라미터로 전달합니다.
           sam deploy \
             --stack-name inhatc-team2-infra \
             --region us-east-1 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --capabilities CAPABILITY_IAM \
-            --s3-bucket inhatc-team2-5-raw-data
+            --s3-bucket inhatc-team2-5-raw-data \
+            --parameter-overrides \
+              WeatherApiKey=${{ secrets.WEATHER_API_KEY }} \
+              AirApiKey=${{ secrets.AIR_API_KEY }}

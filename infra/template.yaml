@@ -2,7 +2,8 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   Weather-Fit Project Core Infrastructure (Team 2)
-  - Unified template based on uploaded SAM fragments.
+  - Fixed: Moved 'Role' from Globals to individual Function properties.
+  - Features: S3 Buckets, DynamoDB Tables, 3 Lambda Functions with Triggers & Env Vars.
 
 Parameters:
   WeatherApiKey:
@@ -17,14 +18,14 @@ Parameters:
 Globals:
   Function:
     Runtime: python3.11
-    MemorySize: 128
+    MemorySize: 256
+    Timeout: 600
     Architectures: [x86_64]
-    # 학교 실습 환경 전용 역할 고정
-    Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
+    # Globals에서는 Role을 지원하지 않으므로 삭제하고 아래 개별 함수에 추가됨
 
 Resources:
   # ==========================================
-  # 1. S3 Buckets
+  # 1. S3 Buckets (저장소)
   # ==========================================
   FrontendBucket:
     Type: AWS::S3::Bucket
@@ -42,7 +43,7 @@ Resources:
       BucketName: inhatc-team2-4-parquet-data
 
   # ==========================================
-  # 2. DynamoDB Tables
+  # 2. DynamoDB Tables (데이터베이스)
   # ==========================================
   WeatherCacheTable:
     Type: AWS::DynamoDB::Table
@@ -69,7 +70,7 @@ Resources:
       KeySchema: [{AttributeName: weather_pattern, KeyType: HASH}]
 
   # ==========================================
-  # 3. Lambda Functions
+  # 3. Lambda Functions (연산)
   # ==========================================
   
   # 추천 API (고원영 파트)
@@ -78,7 +79,9 @@ Resources:
     Properties:
       FunctionName: inhatc-team2-1-recommendAPI
       Handler: lambda_function.lambda_handler
-      Timeout: 3
+      Timeout: 30
+      # Globals에서 빠진 Role을 여기에 추가하여 권한 에러 해결
+      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
       FunctionUrlConfig:
         AuthType: NONE
         Cors:
@@ -95,6 +98,7 @@ Resources:
       FunctionName: inhatc-team2-5-dataAPI
       Handler: lambda_function.lambda_handler
       Timeout: 600
+      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
       Environment:
         Variables:
           WEATHER_API_KEY: !Ref WeatherApiKey
@@ -121,6 +125,7 @@ Resources:
       FunctionName: inhatc-team2-5-real-time-dataAPI
       Handler: lambda_function.lambda_handler
       Timeout: 600
+      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
       Environment:
         Variables:
           AIR_API_KEY: !Ref AirApiKey
@@ -140,18 +145,12 @@ Resources:
       InlineCode: |
         def lambda_handler(event, context):
             return {"message": "Real-time Data API Initialized"}
-
 Outputs:
   RecommendApiUrl:
     Value: !GetAtt RecommendApiFunctionUrl.FunctionUrl
   FrontendBucketDomain:
-    Description: "프론트엔드 S3 도메인 주소입니다."
+    Description: "Frontend S3 Bucket Domain Name"
     Value: !GetAtt FrontendBucket.DomainName
-
   WeatherTableArn:
-    Description: "날씨 테이블의 ARN 정보입니다."
+    Description: "Weather Cache Table ARN"
     Value: !GetAtt WeatherCacheTable.Arn
-
-  DataPipelineFunctionArn:
-    Description: "데이터 파이프라인 람다의 ARN입니다."
-    Value: !GetAtt DataPipelineFunction.Arn
