@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Weather-Fit Project Core Infrastructure (Team 2)
+  - S3 Buckets: Frontend, Raw Data, Parquet Data
+  - DynamoDB Tables: Weather, Air, Recommend
+
+Resources:
+  # ==========================================
+  # 1. S3 Buckets (저장소)
+  # ==========================================
+  
+  # 프론트엔드 정적 웹 호스팅용 버킷
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: inhatc-team2-3-frontend
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # 수집된 원본(Raw) JSON 데이터 저장용
+  RawDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: inhatc-team2-5-raw-data
+
+  # 분석용 Parquet 데이터 저장용 (추가된 부분)
+  ParquetDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: inhatc-team2-4-parquet-data
+
+  # ==========================================
+  # 2. DynamoDB Tables (데이터베이스)
+  # ==========================================
+
+  # 날씨 정보 캐싱 테이블
+  WeatherCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: team2-weather-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: region_code
+          AttributeType: S
+      KeySchema:
+        - AttributeName: region_code
+          KeyType: HASH
+
+  # 대기질 정보 캐싱 테이블
+  AirCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: team2-air-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: region_code
+          AttributeType: S
+      KeySchema:
+        - AttributeName: region_code
+          KeyType: HASH
+
+  # 옷 추천 결과 캐싱 테이블
+  RecommendCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: team2-recommend-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: weather_pattern
+          AttributeType: S
+      KeySchema:
+        - AttributeName: weather_pattern
+          KeyType: HASH
+
+Outputs:
+  FrontendBucketDomain:
+    Description: "Frontend S3 Bucket Domain Name"
+    Value: !GetAtt FrontendBucket.DomainName
+  WeatherTableArn:
+    Description: "Weather Cache Table ARN"
+    Value: !GetAtt WeatherCacheTable.Arn

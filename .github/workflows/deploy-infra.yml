@@ -1,0 +1,50 @@
+name: Deploy Infrastructure (S3 & DynamoDB)
+
+on:
+  # 자동 배포를 끄고, 관리자가 직접 버튼을 누를 때만 배포되게 변경
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "인프라를 정말로 배포하시겠습니까? (yes 입력)"
+        required: true
+        default: "no"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 사용자가 'yes'라고 입력했을 때만 실행되도록 안전장치 추가
+    if: github.event.inputs.confirm == 'yes'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install AWS SAM CLI
+        run: |
+          pip install aws-sam-cli
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
+          aws-region: us-east-1
+
+      - name: SAM Build and Deploy
+        run: |
+          cd infra
+          sam build
+          sam deploy \
+            --stack-name inhatc-team2-infra \
+            --region us-east-1 \
+            --confirm-changeset False \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3
