@@ -32,17 +32,19 @@ project-root/
 ├── .github/workflows/
 │   ├── deploy-frontend.yml
 │   ├── deploy-backend.yml
-│   └── deploy-data-pipeline.yml
+│   ├── deploy-data-pipeline.yml
+│   └── deploy-real-time.yml
 ├── frontend/               # Vue.js (Vite)
 ├── backend/                # FastAPI + Mangum
 ├── data_pipeline/          # 기상 데이터 수집 + AI 배치 추론
+├── real_time/              # 실시간 날씨·대기질 수집 → DynamoDB 적재
 ├── infra/                  # SAM template, Athena DDL
 ├── docs/                   # 팀 공유 문서
 ├── .gitignore
 └── README.md
 ```
 
-각 폴더(`frontend/`, `backend/`, `data_pipeline/`)에는 해당 영역의 별도 README가 있습니다.
+각 폴더(`frontend/`, `backend/`, `data_pipeline/`, `real_time/`)에는 해당 영역의 별도 README가 있습니다.
 인프라 정의 파일은 `infra/`에서 관리하며, 임의로 직접 콘솔에서 리소스를 수정하지 마세요.
 
 ---
@@ -138,6 +140,12 @@ BEDROCK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
 # data_pipeline/.env
 BEDROCK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
 DYNAMODB_CACHE_TABLE_NAME=
+
+# real_time/.env
+WEATHER_API_KEY=
+AIR_API_KEY=
+WEATHER_DYNAMODB_TABLE_NAME=inhatc-team2-5-weather-cache
+AIR_DYNAMODB_TABLE_NAME=inhatc-team2-5-air-cache
 ```
 
 새로운 환경 변수를 추가할 때는 반드시 `.env.example`도 함께 업데이트해 주세요.
@@ -175,9 +183,10 @@ GitHub Actions로 자동 배포됩니다. 각 워크플로우에 **path filter**
 
 | 워크플로우 | 트리거 경로 | 동작 |
 |-----------|-----------|------|
-| `deploy-frontend.yml` | `frontend/**` | build → S3 업로드 → CloudFront 캐시 무효화 |
-| `deploy-backend.yml` | `backend/**` | pytest → sam build → sam deploy |
-| `deploy-data-pipeline.yml` | `data_pipeline/**` | sam build → sam deploy |
+| `deploy-frontend.yml` | `frontend/**` | npm build → S3 업로드 |
+| `deploy-backend.yml` | `backend/**` | zip → Lambda 코드 업데이트 |
+| `deploy-data-pipeline.yml` | `data_pipeline/**` | zip → Lambda 코드 업데이트 |
+| `deploy-real-time.yml` | `real_time/**` | zip → Lambda 코드 업데이트 |
 
 ### 인증 방식
 
@@ -190,13 +199,14 @@ OIDC 설정 상세는 [초기 세팅 가이드 4.1절](./docs/AWS_GitHub_초기�
 # 프론트엔드 수동 배포
 cd frontend
 npm run build
-aws s3 sync dist/ s3://<bucket-name> --delete
-aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"
+aws s3 sync dist/ s3://inhatc-team2-3-frontend --delete
 
 # 백엔드 수동 배포
 cd backend
-sam build
-sam deploy --config-env <dev|prod>
+zip -r ../deploy.zip .
+aws lambda update-function-code \
+  --function-name inhatc-team2-1-recommendAPI \
+  --zip-file fileb://../deploy.zip
 ```
 
 ---
@@ -207,28 +217,44 @@ sam deploy --config-env <dev|prod>
 
 | 구분 | 트리거 브랜치 | S3 버킷 | API 엔드포인트 |
 |------|-------------|---------|--------------|
-| **Development** | `develop` | `myapp-dev-frontend` | Lambda Function URL (dev) |
-| **Production** | `main` | `myapp-prod-frontend` | Lambda Function URL (prod) |
+| **Development** | `develop` | `inhatc-team2-3-frontend` | Lambda Function URL (dev) |
+| **Production** | `main` | `inhatc-team2-3-frontend` | Lambda Function URL (prod) |
 
-> ⚠️ **리전은 `ap-northeast-2`(서울)로 통일합니다.** 콘솔에서 작업할 때 리전이 다른 곳으로 설정되어 있지 않은지 반드시 확인하세요.
+> ⚠️ **리전은 `us-east-1`(버지니아)으로 통일합니다.** 콘솔에서 작업할 때 리전이 다른 곳으로 설정되어 있지 않은지 반드시 확인하세요.
 
 ---
 
 ## AWS 리소스 구성
 
 ```
-Frontend:  S3 (정적 호스팅) → CloudFront (CDN + HTTPS)
+Frontend:  S3 (inhatc-team2-3-frontend) → CloudFront (CDN + HTTPS)
 
-Backend:   Lambda Function URL (FastAPI + Mangum)
-             → DynamoDB (캐싱된 AI 답변 조회)
+Backend:   Lambda (inhatc-team2-1-recommendAPI) Function URL
+             → DynamoDB (inhatc-team2-1-recommend-cache, 캐싱된 AI 답변 조회)
              → Bedrock (캐시 미스 시 실시간 호출, 프롬프트 캐싱 적용)
 
-Data:      EventBridge (매일 자정)
-             → Lambda (기상청 예보 수집 + 유니크 패턴 추출)
-             → Bedrock 배치 추론 (수십 개 패턴 일괄 처리)
-             → DynamoDB (AI 답변 캐싱, TTL 영구)
-             → S3 (원본 데이터) → Glue (ETL) → Athena (분석)
+Real-time: EventBridge (inhatc-team2-5-real-time-trigger, rate(30 minutes))
+             → Lambda (inhatc-team2-5-real-time-dataAPI)
+             → DynamoDB (inhatc-team2-5-weather-cache, inhatc-team2-5-air-cache)
+
+Data:      EventBridge (rate(1 hour))
+             → Lambda (inhatc-team2-5-dataAPI, 기상청 예보 수집)
+             → S3 (inhatc-team2-5-raw-data, 원본 데이터)
+             → Glue (ETL) → Athena (분석)
+             → S3 (inhatc-team2-4-parquet-data)
+
+Batch AI:  Lambda (배치 추론)
+             → 유니크 패턴 추출 → Bedrock 배치 추론
+             → DynamoDB (inhatc-team2-1-recommend-cache, AI 답변 캐싱)
 ```
+
+### DynamoDB 테이블 목록
+
+| 테이블명 | 파티션 키 | 용도 | TTL |
+|--------|---------|------|-----|
+| `inhatc-team2-5-weather-cache` | `region_code` (S) | 실시간 날씨 상태 | 설정 가능 |
+| `inhatc-team2-5-air-cache` | `stationKey` (S) | 실시간 대기질 상태 | 설정 가능 |
+| `inhatc-team2-1-recommend-cache` | `weather_pattern` (S) | AI 추천 답변 캐싱 | 영구 (TTL 없음) |
 
 ### 프리 티어 한도 (주요 서비스)
 
@@ -287,7 +313,7 @@ ZIP 배포는 압축 해제 시 250MB 제한이 있습니다. 의존성이 많�
 
 ### `sam deploy`에서 권한 에러
 
-- 현재 AWS CLI 프로필의 리전이 `ap-northeast-2`인지 확인 → `aws configure get region`
+- 현재 AWS CLI 프로필의 리전이 `us-east-1`인지 확인 → `aws configure get region`
 - IAM 권한이 부족한 경우 백엔드&인프라 담당자에게 요청하세요
 - OIDC Role의 Trust Policy에 본인 브랜치가 허용 조건에 포함되어 있는지 확인하세요
 
