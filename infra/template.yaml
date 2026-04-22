@@ -14,3 +14,25 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: inhatc-team2-4-parquet-data
+
+  WeatherCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inhatc-team2-5-weather-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: region_code, AttributeType: S}]
+      KeySchema: [{AttributeName: region_code, KeyType: HASH}]
+  AirCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inhatc-team2-5-air-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: region_code, AttributeType: S}]
+      KeySchema: [{AttributeName: region_code, KeyType: HASH}]
+  RecommendCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inhatc-team2-1-recommend-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: weather_pattern, AttributeType: S}]
+      KeySchema: [{AttributeName: weather_pattern, KeyType: HASH}]
