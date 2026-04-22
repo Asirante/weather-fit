@@ -1,4 +1,4 @@
-name: Deploy Backend (Member 1 Stack)
+name: Deploy Backend Code
 
 on:
   push:
@@ -14,13 +14,10 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
           aws-region: us-east-1
-      - name: SAM Build and Deploy
+      - name: Zip and Update Code
         run: |
           cd backend
-          sam build
-          sam deploy \
-            --stack-name inhatc-team2-1-backend \
-            --region us-east-1 \
-            --no-confirm-changeset \
-            --capabilities CAPABILITY_IAM \
-            --s3-bucket inhatc-team2-5-raw-data
+          zip -r ../deploy.zip .
+          aws lambda update-function-code \
+            --function-name inhatc-team2-1-recommendAPI \
+            --zip-file fileb://../deploy.zip

@@ -1,7 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: "Team 2 Common Infrastructure - S3 Buckets & DynamoDB Tables"
-
+Description: "Common S3 & DynamoDB Stack"
 Resources:
   FrontendBucket:
     Type: AWS::S3::Bucket
