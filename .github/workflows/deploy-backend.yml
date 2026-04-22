@@ -1,10 +1,9 @@
-name: Deploy Backend (FastAPI)
+name: Deploy Backend (Recommend API)
 
 on:
   push:
     branches: [main]
-    paths:
-      - "backend/**"
+    paths: ["backend/**"]
 
 permissions:
   id-token: write
@@ -15,26 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Configure AWS credentials
+      - name: Auth AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
           aws-region: us-east-1
-
-      - name: Install dependencies and zip
+      - name: Build and Deploy
         run: |
           cd backend
-          pip install -r requirements.txt -t .
+          if [ -f requirements.txt ]; then pip install -r requirements.txt -t .; fi
           zip -r ../deploy.zip .
-
-      - name: Deploy to AWS Lambda
-        run: |
           aws lambda update-function-code \
             --function-name inhatc-team2-1-recommendAPI \
-            --zip-file fileb://deploy.zip
+            --zip-file fileb://../deploy.zip

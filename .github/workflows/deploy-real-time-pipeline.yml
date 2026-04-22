@@ -1,9 +1,9 @@
-name: Deploy Data Pipeline
+name: Deploy Real-time Data API
 
 on:
   push:
     branches: [main]
-    paths: ["data_pipeline/**"]
+    paths: ["real_time/**"]
 
 permissions:
   id-token: write
@@ -21,8 +21,8 @@ jobs:
           aws-region: us-east-1
       - name: Build and Deploy
         run: |
-          cd data_pipeline
+          cd real_time
           zip -r ../deploy.zip .
           aws lambda update-function-code \
-            --function-name inhatc-team2-5-dataAPI \
+            --function-name inhatc-team2-5-real-time-dataAPI \
             --zip-file fileb://../deploy.zip
