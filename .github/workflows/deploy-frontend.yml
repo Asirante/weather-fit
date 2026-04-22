@@ -6,11 +6,21 @@ on:
     paths:
       - "frontend/**"
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
+          aws-region: us-east-1
 
       - name: Install & Build
         run: |
@@ -18,5 +28,8 @@ jobs:
           npm install
           npm run build
 
-      - name: Dummy Deploy Step
-        run: echo "Vue.js (Vite) dist files are ready!"
+      - name: Deploy to S3 and Invalidate CloudFront
+        run: |
+          aws s3 sync frontend/dist/ s3://inhatc-team2-3-frontend --delete
+          # 주의: [클라우드프론트ID] 부분은 실제 발급받은 ID 문자열로 수정해야 합니다.
+          aws cloudfront create-invalidation --distribution-id [클라우드프론트ID] --paths "/*"

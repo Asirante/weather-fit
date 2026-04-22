@@ -4,7 +4,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "backend/**" # backend 폴더 수정 시에만 실행
+      - "backend/**"
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   deploy:
@@ -17,12 +21,20 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
+          aws-region: us-east-1
+
+      - name: Install dependencies and zip
         run: |
           cd backend
-          pip install -r requirements.txt -t . # Lambda 배포용 패키징
+          pip install -r requirements.txt -t .
           zip -r ../deploy.zip .
 
-      # 여기에 AWS CLI나 Serverless Framework 배포 명령어를 추가하세요.
-      - name: Dummy Deploy Step
-        run: echo "FastAPI Backend is ready to be deployed to Lambda!"
+      - name: Deploy to AWS Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name inhatc-team2-1-recommendAPI \
+            --zip-file fileb://deploy.zip

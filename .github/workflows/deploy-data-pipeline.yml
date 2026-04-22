@@ -6,10 +6,28 @@ on:
     paths:
       - "data_pipeline/**"
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
+          aws-region: us-east-1
+
       - name: Deploy ETL Lambda
-        run: echo "Deploying ETL logic to AWS Lambda..."
+        run: |
+          cd data_pipeline
+          # 필요에 따라 zip 패키징 로직을 추가하세요. 아래는 임시 압축 예시입니다.
+          zip -r ../deploy_data.zip .
+          cd ..
+          aws lambda update-function-code \
+            --function-name inhatc-team2-5-dataAPI \
+            --zip-file fileb://deploy_data.zip
