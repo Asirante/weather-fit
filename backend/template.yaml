@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "Member 1 Recommend API Stack"
+
+Resources:
+  RecommendApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: inhatc-team2-1-recommendAPI
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 128
+      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins: ["*"]
+      CodeUri: .

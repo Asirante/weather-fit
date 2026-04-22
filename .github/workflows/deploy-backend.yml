@@ -1,29 +1,26 @@
-name: Deploy Backend (Recommend API)
+name: Deploy Backend (Member 1 Stack)
 
 on:
   push:
     branches: [main]
     paths: ["backend/**"]
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Auth AWS
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
           aws-region: us-east-1
-      - name: Build and Deploy
+      - name: SAM Build and Deploy
         run: |
           cd backend
-          if [ -f requirements.txt ]; then pip install -r requirements.txt -t .; fi
-          zip -r ../deploy.zip .
-          aws lambda update-function-code \
-            --function-name inhatc-team2-1-recommendAPI \
-            --zip-file fileb://../deploy.zip
+          sam build
+          sam deploy \
+            --stack-name inhatc-team2-1-backend \
+            --region us-east-1 \
+            --no-confirm-changeset \
+            --capabilities CAPABILITY_IAM \
+            --s3-bucket inhatc-team2-5-raw-data
