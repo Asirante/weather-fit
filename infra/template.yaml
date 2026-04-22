@@ -1,156 +1,39 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: >
-  Weather-Fit Project Core Infrastructure (Team 2)
-  - Fixed: Moved 'Role' from Globals to individual Function properties.
-  - Features: S3 Buckets, DynamoDB Tables, 3 Lambda Functions with Triggers & Env Vars.
-
-Parameters:
-  WeatherApiKey:
-    Type: String
-    NoEcho: true
-    Description: "기상청 API 키 (GitHub Secrets에서 주입)"
-  AirApiKey:
-    Type: String
-    NoEcho: true
-    Description: "에어코리아 API 키 (GitHub Secrets에서 주입)"
-
-Globals:
-  Function:
-    Runtime: python3.11
-    MemorySize: 256
-    Timeout: 600
-    Architectures: [x86_64]
-    # Globals에서는 Role을 지원하지 않으므로 삭제하고 아래 개별 함수에 추가됨
+Description: "Team 2 Common Infrastructure - S3 Buckets & DynamoDB Tables"
 
 Resources:
-  # ==========================================
-  # 1. S3 Buckets (저장소)
-  # ==========================================
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: inhatc-team2-3-frontend
-
   RawDataBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: inhatc-team2-5-raw-data
-
   ParquetDataBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: inhatc-team2-4-parquet-data
 
-  # ==========================================
-  # 2. DynamoDB Tables (데이터베이스)
-  # ==========================================
   WeatherCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: team2-weather-cache
+      TableName: inhatc-team2-5-weather-cache
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions: [{AttributeName: region_code, AttributeType: S}]
       KeySchema: [{AttributeName: region_code, KeyType: HASH}]
-
   AirCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: team2-air-cache
+      TableName: inhatc-team2-5-air-cache
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions: [{AttributeName: region_code, AttributeType: S}]
       KeySchema: [{AttributeName: region_code, KeyType: HASH}]
-
   RecommendCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: team2-recommend-cache
+      TableName: inhatc-team2-1-recommend-cache
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions: [{AttributeName: weather_pattern, AttributeType: S}]
       KeySchema: [{AttributeName: weather_pattern, KeyType: HASH}]
-
-  # ==========================================
-  # 3. Lambda Functions (연산)
-  # ==========================================
-  
-  # 추천 API (고원영 파트)
-  RecommendApiFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: inhatc-team2-1-recommendAPI
-      Handler: lambda_function.lambda_handler
-      Timeout: 30
-      # Globals에서 빠진 Role을 여기에 추가하여 권한 에러 해결
-      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
-      FunctionUrlConfig:
-        AuthType: NONE
-        Cors:
-          AllowOrigins: ["*"]
-      InlineCode: |
-        import json
-        def lambda_handler(event, context):
-            return {"statusCode": 200, "body": json.dumps("Recommend API Initialized")}
-
-  # 정기 데이터 수집 (김호건 파트)
-  DataPipelineFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: inhatc-team2-5-dataAPI
-      Handler: lambda_function.lambda_handler
-      Timeout: 600
-      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
-      Environment:
-        Variables:
-          WEATHER_API_KEY: !Ref WeatherApiKey
-          WEATHER_API_URL: https://apis.data.go.kr/1360000/LivingWthrIdxServiceV4
-          FORECAST_API_URL: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0
-          S3_RAW_BUCKET: !Ref RawDataBucket
-          AIR_INFO_API_URL: https://apis.data.go.kr/B552584/ArpltnInforInqireSvc
-          AIR_POLLUTION_STATS_API_URL: https://apis.data.go.kr/B552584/ArpltnStatsSvc
-          AIR_STATS_API_URL: https://apis.data.go.kr/B552584/ArpltnStatsSvc
-      Events:
-        HourlyTrigger:
-          Type: Schedule
-          Properties:
-            Schedule: "rate(1 hour)"
-            Name: inhatc-team2-5-data-trigger
-      InlineCode: |
-        def lambda_handler(event, context):
-            return {"message": "Data Pipeline Initialized"}
-
-  # 실시간 데이터 수집 (김호건 파트)
-  RealTimeDataFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: inhatc-team2-5-real-time-dataAPI
-      Handler: lambda_function.lambda_handler
-      Timeout: 600
-      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
-      Environment:
-        Variables:
-          AIR_API_KEY: !Ref AirApiKey
-          WEATHER_API_KEY: !Ref WeatherApiKey
-          WEATHER_API_URL: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst
-          WEATHER_DYNAMODB_TABLE_NAME: !Ref WeatherCacheTable
-          AIR_POLLUTION_API_URL: http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty
-          AIR_DYNAMODB_TABLE_NAME: !Ref AirCacheTable
-          LOCATION_BUCKET: !Ref RawDataBucket
-          LOCATION_KEY: location.csv
-      Events:
-        RealTimeTrigger:
-          Type: Schedule
-          Properties:
-            Schedule: "rate(30 minutes)"
-            Name: inhatc-team2-5-real-time-trigger
-      InlineCode: |
-        def lambda_handler(event, context):
-            return {"message": "Real-time Data API Initialized"}
-Outputs:
-  RecommendApiUrl:
-    Value: !GetAtt RecommendApiFunctionUrl.FunctionUrl
-  FrontendBucketDomain:
-    Description: "Frontend S3 Bucket Domain Name"
-    Value: !GetAtt FrontendBucket.DomainName
-  WeatherTableArn:
-    Description: "Weather Cache Table ARN"
-    Value: !GetAtt WeatherCacheTable.Arn

@@ -1,17 +1,13 @@
-name: Deploy Infrastructure (Common S3/DB)
+name: Deploy Real-time Pipeline (Member 5 Stack)
 
 on:
-  workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'yes 입력 시 배포 시작'
-        required: true
-        default: 'no'
+  push:
+    branches: [main]
+    paths: ["real_time/**"]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm == 'yes'
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
@@ -20,11 +16,14 @@ jobs:
           aws-region: us-east-1
       - name: SAM Build and Deploy
         run: |
-          cd infra
+          cd real_time
           sam build
           sam deploy \
-            --stack-name inhatc-team2-infra \
+            --stack-name inhatc-team2-5-real-time \
             --region us-east-1 \
             --no-confirm-changeset \
             --capabilities CAPABILITY_IAM \
-            --s3-bucket inhatc-team2-5-raw-data
+            --s3-bucket inhatc-team2-5-raw-data \
+            --parameter-overrides \
+                WeatherApiKey=${{ secrets.WEATHER_API_KEY }} \
+                AirApiKey=${{ secrets.AIR_API_KEY }}

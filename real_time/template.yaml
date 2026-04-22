@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "Member 5 Real-time Data Stack"
+
+Parameters:
+  AirApiKey:
+    Type: String
+  WeatherApiKey:
+    Type: String
+
+Resources:
+  RealTimeDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: inhatc-team2-5-real-time-dataAPI
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      Timeout: 600
+      MemorySize: 256
+      Role: arn:aws:iam::269578498605:role/SafeRole-inhatc-team2
+      Environment:
+        Variables:
+          AIR_API_KEY: !Ref AirApiKey
+          WEATHER_API_KEY: !Ref WeatherApiKey
+          WEATHER_DYNAMODB_TABLE_NAME: inhatc-team2-5-weather-cache
+          AIR_DYNAMODB_TABLE_NAME: inhatc-team2-5-air-cache
+      Events:
+        RealTimeTrigger:
+          Type: Schedule
+          Properties:
+            Schedule: "rate(30 minutes)"
+            Name: inhatc-team2-5-real-time-trigger
+      CodeUri: .
