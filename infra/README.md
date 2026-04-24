@@ -9,8 +9,8 @@ SAM/CloudFormation 템플릿과 Athena DDL 스크립트를 포함합니다.
 
 ```
 infra/
-├── template.yaml          # 공통 인프라 (S3 버킷, DynamoDB, CloudFront 등)
-├── samconfig.toml         # SAM 배포 설정 (dev/prod 환경별)
+├── template.yaml          # 공통 인프라 참고용 템플릿 (S3 버킷, DynamoDB 등)
+├── samconfig.toml         # SAM 배포 설정 (참고용 - 실제 배포에 사용하지 않음)
 ├── athena_ddl/
 │   └── weather_parquet.sql
 └── README.md
@@ -18,73 +18,67 @@ infra/
 
 ---
 
+## ⚠️ SAM CLI 사용 불가 안내
+
+> 학교 AWS 계정은 **비용관리 태그(Cost Allocation Tag)** 기반으로 리소스 CRUD 권한을 제어합니다.
+> Lambda 생성 직후 태그가 붙기 전, SAM이 후속 작업(코드 배포, 트리거 연결 등)을 시도하면 **권한 오류(AccessDeniedException)**가 발생합니다.
+>
+> 따라서 **`sam build` / `sam deploy` 명령어는 우리 환경에서 사용할 수 없습니다.**
+> `template.yaml`과 `samconfig.toml`은 인프라 구조 파악을 위한 **참고용 문서**로만 보존합니다.
+
+---
+
 ## 핵심 원칙
 
-1. **콘솔에서 직접 리소스를 수정하지 마세요.** 모든 인프라 변경은 이 폴더의 템플릿을 수정하고 배포하는 방식으로 진행합니다.
-2. **환경(dev/prod)은 `samconfig.toml`에서 분리합니다.** `--config-env dev` 또는 `--config-env prod`로 구분합니다.
-3. **변경 전 반드시 changeset을 확인하세요.** `sam deploy`는 기본적으로 changeset 확인을 요청합니다. 예상치 못한 리소스 삭제가 없는지 꼭 검토하세요.
+1. **모든 인프라는 콘솔에서 수동 관리합니다.** S3 버킷, DynamoDB 테이블, Lambda 함수, EventBridge 트리거 등 모든 리소스는 AWS 콘솔(us-east-1 리전)에서 직접 생성/수정합니다.
+2. **Lambda 코드만 GitHub Actions가 자동 배포합니다.** `aws lambda update-function-code` 명령어를 통해 코드만 업데이트합니다.
+3. **Athena DDL은 SQL 파일로 버전 관리합니다.** 콘솔에서 직접 DDL을 실행하지 말고, SQL 파일을 먼저 커밋한 뒤 실행하세요.
 
 ---
 
-## 배포
+## 현재 생성 완료된 리소스
 
-```bash
-# 공통 인프라 배포
-cd infra
-sam build
-sam deploy --config-env dev    # 개발 환경
-sam deploy --config-env prod   # 운영 환경 (주의!)
+### S3 버킷
+
+| 버킷명 | 용도 |
+|--------|------|
+| `inhatc-team2-3-frontend` | 프론트엔드 정적 파일 호스팅 |
+| `inhatc-team2-5-raw-data` | 원본 수집 데이터 저장 |
+| `inhatc-team2-4-parquet-data` | 분석용 Parquet 데이터 저장 |
+
+### DynamoDB 테이블
+
+| 테이블명 | 파티션 키 | 용도 | TTL |
+|--------|---------|------|-----|
+| `inhatc-team2-5-weather-cache` | `region_code` (S) | 실시간 날씨 상태 | 설정 가능 |
+| `inhatc-team2-5-air-cache` | `stationKey` (S) | 실시간 대기질 상태 | 설정 가능 |
+| `inhatc-team2-1-recommend-cache` | `weather_pattern` (S) | AI 추천 답변 캐싱 | 영구 (TTL 없음) |
+
+### Lambda 함수
+
+| 함수명 | 트리거 | 담당 |
+|--------|--------|------|
+| `inhatc-team2-1-recommendAPI` | Function URL | 백엔드(고원영) |
+| `inhatc-team2-5-dataAPI` | EventBridge rate(1 hour) | 데이터(김호건) |
+| `inhatc-team2-5-real-time-dataAPI` | EventBridge rate(30 minutes) | 데이터(김호건) |
+
+---
+
+## 인프라 변경이 필요한 경우
+
+SAM CLI를 사용할 수 없으므로 모든 인프라 변경은 **AWS 콘솔에서 직접** 진행합니다.
+
+```
+AWS 콘솔 접속 → 리전 us-east-1 확인 → 해당 서비스 이동 → 직접 수정
 ```
 
-> ⚠️ prod 환경 배포는 인프라 담당자가 진행합니다. 다른 역할의 팀원은 dev 환경까지만 직접 배포하세요.
+변경 후에는 반드시 `template.yaml`도 동일하게 업데이트하여 팀원들이 현재 인프라 구조를 파악할 수 있도록 합니다.
 
----
-
-## samconfig.toml 예시
-
-```toml
-[default.deploy.parameters]
-stack_name = "myapp-infra"
-region = "ap-northeast-2"
-confirm_changeset = true
-capabilities = "CAPABILITY_IAM"
-
-[dev.deploy.parameters]
-stack_name = "myapp-dev-infra"
-parameter_overrides = "Environment=dev"
-
-[prod.deploy.parameters]
-stack_name = "myapp-prod-infra"
-parameter_overrides = "Environment=prod"
-```
-
----
-
-## 관리하는 리소스 목록
-
-| 리소스 | 설명 | 정의 위치 |
-|--------|------|----------|
-| S3 버킷 (프론트, 데이터) | 정적 파일 호스팅 + 원본 데이터 저장 | `template.yaml` |
-| CloudFront | CDN + HTTPS | `template.yaml` |
-| DynamoDB 테이블 (기상 데이터) | 실시간 날씨 데이터 저장 | `template.yaml` |
-| DynamoDB 테이블 (AI 캐시) | Bedrock AI 답변 캐싱 (TTL 영구) | `template.yaml` |
-| EventBridge Rule | 데이터 수집 + 배치 추론 스케줄 | `data_pipeline/template.yaml` |
-| Lambda 함수 | 백엔드 API + 데이터 수집 + 배치 추론 | 각 영역 `template.yaml` |
-| Lambda Function URL | 백엔드 API 엔드포인트 | `backend/template.yaml` |
-| Athena 테이블 | S3 데이터 분석용 | `athena_ddl/*.sql` |
-
-> **Bedrock 모델 접근 권한**: Bedrock는 CloudFormation으로 관리되지 않습니다. AWS 콘솔 → Bedrock → Model access에서 Claude 3.5 Haiku 모델 접근 요청을 별도로 진행해야 합니다. 이 작업은 인프라 담당자가 처리합니다.
+> ⚠️ **prod 환경 인프라 변경**은 인프라 담당자가 진행합니다. 다른 역할의 팀원은 dev 환경까지만 직접 변경하세요.
 
 ---
 
 ## DynamoDB 테이블 설계
-
-본 프로젝트에서는 DynamoDB 테이블을 두 개 사용합니다.
-
-| 테이블 | 용도 | 파티션 키 | TTL |
-|--------|------|----------|-----|
-| 기상 데이터 | 실시간 날씨 정보 저장 | 위치 + 시간 | 설정 가능 |
-| AI 캐시 | Bedrock 추천 답변 캐싱 | 기상 조건 조합 | 영구 (TTL 없음) |
 
 AI 캐시 테이블의 키 설계 변경은 기존 캐시 전체 무효화를 의미하므로, 백엔드/데이터 팀과 반드시 협의 후 진행하세요.
 
@@ -109,7 +103,6 @@ aws athena start-query-execution \
 
 ## 작업 시 주의사항
 
-- `template.yaml` 수정 후에는 `sam validate`로 문법 오류를 먼저 확인하세요.
-- CloudFormation 스택이 `ROLLBACK_COMPLETE` 상태가 되면 삭제 후 재생성해야 합니다. 이 경우 인프라 담당자에게 연락하세요.
 - IAM 권한이나 OIDC Trust Policy 변경은 반드시 인프라 담당자가 리뷰 후 적용합니다.
 - Lambda에 Bedrock 호출 권한(`bedrock:InvokeModel`)이 IAM Role에 포함되어 있는지 확인하세요.
+- **Bedrock 모델 접근 권한**: AWS 콘솔 → Bedrock → Model access에서 Claude 3.5 Haiku 모델 접근 요청을 별도로 진행해야 합니다. 이 작업은 인프라 담당자가 처리합니다.
