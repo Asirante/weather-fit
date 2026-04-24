@@ -65,7 +65,7 @@ data_pipeline/
 │   └── ...
 ├── glue_jobs/
 │   └── csv_to_parquet.py      # Glue ETL 스크립트
-├── template.yaml               # SAM 템플릿 (파이프라인용)
+├── template.yaml               # SAM 템플릿 (참고용 - 실제 배포에 사용하지 않음, 아래 주의사항 참고)
 ├── .env.example
 └── README.md
 ```
@@ -83,7 +83,7 @@ data_pipeline/
 | `S3_RAW_BUCKET` | 원본 CSV 저장 버킷 | 수집 Lambda |
 | `S3_PARQUET_BUCKET` | 변환된 Parquet 저장 버킷 | Glue Job |
 
-Lambda 환경 변수는 SAM `template.yaml`에서 정의하며, 배포 환경(dev/prod)별로 분리되어 있습니다.
+Lambda 환경 변수는 **AWS 콘솔(us-east-1 리전)에서 직접 설정**합니다. `git-sync.html` 가이드를 참고하세요.
 
 ---
 
@@ -91,16 +91,15 @@ Lambda 환경 변수는 SAM `template.yaml`에서 정의하며, 배포 환경(de
 
 ### Lambda 함수 로컬 실행
 
+> ⚠️ **SAM CLI 사용 불가**: 학교 AWS 계정의 비용관리 태그 정책으로 인해 `sam build` / `sam local invoke`를 사용하면 권한 오류가 발생합니다. 로컬 테스트는 아래 방법을 사용하세요.
+
 ```bash
+# 로컬에서 직접 Python으로 핸들러 실행 (단위 테스트)
 cd data_pipeline
-sam build
-
-# 수집 Lambda 테스트
-sam local invoke WeatherCollectorFunction --event events/test_collect.json
-
-# 배치 추론 Lambda 테스트 (주의: Bedrock 호출 발생, 토큰 과금)
-sam local invoke BatchInferenceFunction --event events/test_batch.json
+python -c "from lambda_function import lambda_handler; lambda_handler({}, None)"
 ```
+
+실제 AWS 리소스(DynamoDB, S3)에 접근하는 테스트는 dev 환경 자격증명을 사용하되, **prod 리소스에는 절대 접근하지 마세요.**
 
 ### Glue Job 로컬 테스트
 
@@ -115,12 +114,32 @@ python glue_jobs/csv_to_parquet.py --local
 
 ## 배포
 
-`develop` 또는 `main` 브랜치에 Push하면 GitHub Actions가 SAM 빌드 → 배포를 수행합니다. 수동 배포:
+> ⚠️ **SAM CLI 사용 불가**: `template.yaml`은 참고용 문서로만 보존하며 실제 배포에 사용하지 않습니다.
+
+`develop` 또는 `main` 브랜치의 `data_pipeline/**` 경로에 Push하면 **GitHub Actions가 자동으로 배포**를 수행합니다.
+
+```yaml
+# .github/workflows/deploy-data-pipeline.yml 동작 방식
+cd data_pipeline
+zip -r ../deploy.zip .
+aws lambda update-function-code \
+  --function-name inhatc-team2-5-dataAPI \
+  --zip-file fileb://../deploy.zip
+```
+
+### 수동 배포가 필요한 경우
 
 ```bash
-sam build
-sam deploy --config-env dev
+cd data_pipeline
+zip -r ../deploy.zip .
+aws lambda update-function-code \
+  --function-name inhatc-team2-5-dataAPI \
+  --zip-file fileb://../deploy.zip
 ```
+
+### Lambda 환경변수 / 트리거 설정 변경
+
+코드가 아닌 Lambda 설정(환경변수, 트리거, 메모리 등)을 변경해야 하는 경우에는 **AWS 콘솔(us-east-1 리전)에서 직접 수정**하세요. `git-sync.html` 가이드를 참고하세요.
 
 ---
 
