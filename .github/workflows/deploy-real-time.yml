@@ -2,7 +2,7 @@ name: Deploy Real-time Pipeline Code
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths: ["real_time/**"]
 
 permissions:
