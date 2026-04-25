@@ -2,7 +2,7 @@ name: Deploy Backend Code
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths: ["backend/**"]
 
 permissions:
