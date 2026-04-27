@@ -4,6 +4,13 @@ on:
   push:
     branches: [main, develop]
     paths: ["data_pipeline/**"]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "수동 배포를 진행하려면 yes를 입력하세요"
+        required: true
+        type: string
+        default: "no"
 
 permissions:
   id-token: write
@@ -11,6 +18,7 @@ permissions:
 
 jobs:
   deploy:
+    if: github.event_name == 'push' || inputs.confirm == 'yes'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
