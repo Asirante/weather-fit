@@ -141,7 +141,6 @@
 <script setup>
     import { ref, computed, onMounted } from 'vue';
     import { searchHistory } from '../stores/usehistory';
-    // 🌟 hourlyOutfitData 추가 임포트
     import { currentWeather, hourlyData, hourlyOutfitData, fetchWeatherData } from '../stores/useWeather';
 
     // 화면 진입 시 최우선 실행 로직

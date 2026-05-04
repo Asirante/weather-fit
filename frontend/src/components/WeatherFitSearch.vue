@@ -114,7 +114,7 @@
     const isUnsupported = ref(false); 
     const lastAttemptedRegion = ref(''); 
 
-    // 추가: 하단 유리창 패널의 표시 여부를 결정하는 스위치 (초기값 false)
+    // 하단 유리창 패널의 표시 여부를 결정하는 스위치 (초기값 false)
     const showBottomPanel = ref(false);
 
     let map = null;
@@ -263,7 +263,7 @@
 </script>
 
 <style scoped>
-    /* 🌟 수정 3: 유리창 패널 내부 배치 및 넉넉한 간격(gap) 조절 */
+    /* 수정 3: 유리창 패널 내부 배치 및 넉넉한 간격(gap) 조절 */
     .weather-content { 
         display: flex; 
         align-items: center; 
@@ -299,7 +299,7 @@
     .map-section { position: relative; background: white; border-radius: 12px; border: 1px solid var(--color-neutral-200); overflow: hidden; }
     .map-container { width: 100%; height: 100%; min-height: 550px; }
     
-    /* 🌟 수정 2: 하단 고정 날씨 패널 높이 고정 및 중앙 정렬 */
+    /* 하단 고정 날씨 패널 높이 고정 및 중앙 정렬 */
     .bottom-weather-panel { 
         position: absolute; 
         bottom: 20px; left: 20px; right: 20px; z-index: 10; 
@@ -344,7 +344,7 @@
     .weather-data-box { display: flex; align-items: center; gap: 3rem; flex: 1; }
     .weather-data-box.unsupported { gap: 2rem; }
 
-    /* 수정: 지역 이름 2줄 텍스트 스타일 */
+    /* 지역 이름 2줄 텍스트 스타일 */
     .location-group { min-width: 150px; flex-shrink: 0; }
     .area-title { margin: 0; line-height: 1.3; }
     .area-title .city { font-size: 1rem; font-weight: 600; color: var(--color-text-600); }
@@ -353,7 +353,7 @@
     .info-group .label { font-size: 0.75rem; color: #64748b; display: block; margin-bottom: 0.2rem; }
     .status-warning { color: var(--color-red-500); font-weight: 700; font-size: 1.1rem; flex: 1;}
     
-    /* 수정: 온도 및 미세먼지 강제 1줄 처리 */
+    /* 온도 및 미세먼지 강제 1줄 처리 */
     .data-group { display: flex; align-items: center; gap: 1.5rem; flex-shrink: 0; }
     .temp-display { display: flex; align-items: center; gap: 0.5rem; white-space: nowrap; }
     .temp-display .icon { font-size: 2rem; }

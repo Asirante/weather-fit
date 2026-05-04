@@ -30,10 +30,13 @@
                             v-for="item in displayOotdItems" 
                             :key="item.id" 
                             class="ootd-card"
-                            :class="{ 'mask-card': item.type === '마스크' }"
+                            :class="[
+                                { 'mask-card': item.type === '마스크' },
+                                item.type === '마스크' ? getMaskCardClass(selectedHourlyWeather?.pm25Status) : ''
+                            ]"
                         >
                             <template v-if="item.type === '마스크'">
-                                <div class="mask-header">
+                                <div class="mask-header" :class="getMaskHeaderClass(selectedHourlyWeather?.pm25Status)">
                                     😷 마스크 추천
                                 </div>
                                 <div class="mask-body">
@@ -180,6 +183,18 @@
         return 'text-bad'; 
     };
 
+    const getMaskCardClass = (status) => {
+        if (status === '좋음') return 'border-good';
+        if (status === '보통') return 'border-normal';
+        return 'border-bad'; // 나쁨, 매우나쁨
+    };
+
+    const getMaskHeaderClass = (status) => {
+        if (status === '좋음') return 'bg-good';
+        if (status === '보통') return 'bg-normal';
+        return 'bg-bad'; // 나쁨, 매우나쁨
+    };
+
     const getWeatherIcon = (pop, popform) => {
         switch (popform) {
             case '맑음': return '☀️';
@@ -196,7 +211,7 @@
 </script>
 
 <style scoped>
-    /* 추가된 스타일: 로딩 및 에러 상태 화면 */
+    /* 로딩 및 에러 상태 화면 */
     .status-screen {
         display: flex;
         flex-direction: column;
@@ -290,14 +305,28 @@
     /* 마스크 전용 카드 스타일 */
     .mask-card {
         padding: 0;
-        border: 2px solid var(--color-red-500);
+        border: 2px solid transparent;
         overflow: hidden;
         text-align: left;
         align-items: stretch;
         justify-content: flex-start;
     }
 
-    .mask-header { background-color: var(--color-red-500); color: white; font-weight: 700; padding: 0.8rem 1rem; font-size: 1.05rem; }
+    .mask-card.border-good { border-color: #10B981; }
+    .mask-card.border-normal { border-color: var(--color-amber-500); }
+    .mask-card.border-bad { border-color: var(--color-red-500); }
+
+    .mask-header { 
+        color: white; 
+        font-weight: 700; 
+        padding: 0.8rem 1rem; 
+        font-size: 1.05rem; 
+    }
+
+    .mask-header.bg-good { background-color: #10B981; }
+    .mask-header.bg-normal { background-color: var(--color-amber-500); }
+    .mask-header.bg-bad { background-color: var(--color-red-500); }
+
     .mask-body { padding: 1.2rem 1rem; background: #FFFFFF; }
     .mask-body p { margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--color-text-600); }
 
