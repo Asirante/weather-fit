@@ -43,8 +43,8 @@
         <section class="right-panel map-section">
             <div id="kakao-map" class="map-container">
                 <div v-if="!isMapLoaded" class="map-placeholder">
+                    <div class="spinner"></div>
                     <p>지도를 불러오는 중입니다</p>
-                    <p>(카카오맵 API 연동 필요)</p>
                 </div>
             </div>
 
@@ -295,10 +295,39 @@
     /* 자동완성 */
     .autocomplete-list { position: absolute; top: calc(100% + 8px); left: 0; width: 100%; background: #FFFFFF; border: 1px solid var(--color-neutral-200); border-radius: 8px; margin: 0; padding: 0; list-style-type: none !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 999; max-height: 250px; overflow-y: auto; }
     .autocomplete-item { padding: 0.8rem 1.2rem; cursor: pointer; border-bottom: 1px solid var(--color-neutral-100); font-size: 0.95rem; color: var(--color-text-900); text-align: left; }
-    
+
+    /* 지도 섹션 */
+    .map-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        min-height: 550px; /* 맵 높이와 동일하게 보장 */
+        background-color: var(--color-neutral-50, #f8fafc);
+        color: var(--color-text-600, #475569);
+        font-weight: 600;
+        font-size: 1.1rem;
+        gap: 1.5rem;
+    }
     .map-section { position: relative; background: white; border-radius: 12px; border: 1px solid var(--color-neutral-200); overflow: hidden; }
     .map-container { width: 100%; height: 100%; min-height: 550px; }
     
+    /* 로딩 스피너 스타일 */
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid var(--color-neutral-200, #e2e8f0); /* 옅은 회색 테두리 */
+        border-top: 5px solid var(--color-amber-500, #f59e0b); /* 강조 포인트 색상 */
+        border-radius: 50%;
+        animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite; /* 부드럽게 회전 */
+    }
+    /* 스피너 회전 애니메이션 키프레임 */
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
     /* 하단 고정 날씨 패널 높이 고정 및 중앙 정렬 */
     .bottom-weather-panel { 
         position: absolute; 
