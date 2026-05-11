@@ -76,7 +76,7 @@
                             
                             <div class="info-group data-group">
                                 <div class="temp-display">
-                                    <span class="icon">🌤️</span>
+                                    <span class="icon">{{ getWeatherIcon(currentWeather.rain, currentWeather.sky) }}</span>
                                     <span class="degree">{{ currentWeather.temp }}°C</span>
                                 </div>
                                 <div class="divider"></div>
@@ -259,6 +259,20 @@
             };
         }
         return { city: location, district: '' };
+    };
+
+    const getWeatherIcon = (rain, sky) => {
+        switch (rain) {
+            case '강수없음': 
+                if (sky === '맑음') return '☀️';
+                if (sky === '흐림') return '⛅';
+                break;
+            default:
+                if (sky.includes('비')) return '🌧️';
+                if (sky.includes('눈')) return '🌨️';
+                if (sky.includes('흐림')) return '⛅';
+                break;
+        }
     };
 </script>
 

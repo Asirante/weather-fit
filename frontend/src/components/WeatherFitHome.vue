@@ -3,8 +3,8 @@
         <div class="top-section">        
             <section class="card current-weather-card">
                 <div class="weather-info-left">
-                    <div class="weather-icon-circle">
-                        <span class="placeholder-text">날씨아이콘</span>                        
+                    <div>
+                        <span class="placeholder-text">{{ getWeatherIcon(currentWeather.rain, currentWeather.sky) }}</span>                        
                     </div>
                     <div class="weather-details">
                         <h2 v-html="currentWeather.location.replace(' ', '<br>')"></h2>
@@ -41,7 +41,7 @@
                         class="card hourly-item"
                     >
                         <div class="hour-time">{{ hour.time }}</div>
-                        <div class="hour-icon-ph">날씨<br>아이콘</div>
+                        <div class="hour-icon-ph">{{ getWeatherIcon(hour.rain, hour.sky) }}</div>
                         <div class="hour-temp">{{ hour.temp }}°C</div>
                     </div>
                 </div>
@@ -156,7 +156,7 @@
         ]
     });
 
-    // 🌟 OOTD 아이템 동적 계산 (하드코딩 제거 후 백엔드 데이터 매핑)
+    // OOTD 아이템 동적 계산 (하드코딩 제거 후 백엔드 데이터 매핑)
     const displayOotdItems = computed(() => {
         const weather = hourlyData.value[0] || null;
         // 백엔드에서 받아온 첫 번째 시간대의 옷차림 데이터
@@ -166,27 +166,66 @@
         // 날씨나 옷차림 데이터가 아직 없으면 빈 배열 반환
         if (!weather || !outfit) return items;
 
-        // 1. 상의
-        items.push({ 
-            id: 1, 
-            type: '👕', 
-            name: outfit.top, 
-            description: '추천 상의' 
-        });
+
+        // 1. 상의 - 내용에 따라 아이콘 동적 변경
+        if (outfit.top.includes('반팔')){
+            items.push({ 
+                id: 1, 
+                type: '👕', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        } else if (outfit.top.includes('긴팔')){
+            items.push({ 
+                id: 1, 
+                type: '👔', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        } else if (outfit.top.includes('재킷')){
+            items.push({ 
+                id: 1, 
+                type: '🧥', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        } else if (outfit.top.includes('가죽')){
+            items.push({ 
+                id: 1, 
+                type: '🧥', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        } else if (outfit.top.includes('패딩')){
+            items.push({ 
+                id: 1, 
+                type: '🧣', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        }
 
         // 2. 하의
-        items.push({ 
-            id: 2, 
-            type: '👖', 
-            name: outfit.bottom, 
-            description: '추천 하의' 
-        });
+        if (outfit.bottom.includes('반바지')){
+            items.push({ 
+                id: 2, 
+                type: '🩳', 
+                name: outfit.bottom, 
+                description: '추천 하의' 
+            });
+        } else {
+            items.push({ 
+                id: 2, 
+                type: '👖', 
+                name: outfit.bottom, 
+                description: '추천 하의' 
+            });
+        }
 
         // 3. 준비물 (pack) - 내용에 따라 아이콘 동적 변경
         let packIcon = '✋';
         if (outfit.pack.includes('우산')) packIcon = '☔';
-        else if (weather.popform === '맑음' && outfit.pack === '불필요') packIcon = '✋';
-        else if (weather.popform === '눈') packIcon = '🌨️';
+        else if (weather.sky.includes('눈')) packIcon = '🌨️';
 
         items.push({ 
             id: 3, 
@@ -206,12 +245,28 @@
         return items;
     });
 
+    const getWeatherIcon = (rain, sky) => {
+        switch (rain) {
+            case '강수없음': 
+                if (sky === '맑음') return '☀️';
+                if (sky === '흐림') return '⛅';
+                break;
+            default:
+                if (sky.includes('비')) return '🌧️';
+                if (sky.includes('눈')) return '🌨️';
+                if (sky.includes('흐림')) return '⛅';
+                break;
+        }
+    };
+
 </script>
 <style scoped>
     /* ---------------- 공통 요소 ---------------- */
     .card { background-color: #FFFFFF; border-radius: 12px; border: 1px solid var(--color-neutral-200); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
     .section-title { font-size: 1.25rem; font-weight: 700; margin: 0 0 1rem 0; color: var(--color-text-900); }
-    .placeholder-text, .item-icon-ph, .hour-icon-ph { color: var(--color-text-400); font-size: 0.85rem; text-align: center; line-height: 1.4; }
+    .placeholder-text { color: var(--color-text-400); font-size: 5rem; }
+    .item-icon-ph { color: var(--color-text-400); font-size: 0.85rem; text-align: center; line-height: 1.4; }
+    .hour-icon-ph { color: var(--color-text-400); font-size: 2.5rem; }
     .main-content{ max-width: 1200px; width: 100%; margin-left: auto; margin-right: auto; padding: 0 1rem; box-sizing: border-box; }
     .main-content { margin-top: 5rem; margin-bottom: 5rem; display: flex; flex-direction: column; gap: 2rem; }
 
@@ -219,7 +274,6 @@
     .top-section { display: grid; grid-template-columns: 1fr 1.3fr; gap: 2rem; }
     .current-weather-card { display: flex; justify-content: space-between; align-items: center; padding: 2rem; }
     .weather-info-left { display: flex; align-items: center; gap: 1.5rem; }
-    .weather-icon-circle { width: 100px; height: 100px; border-radius: 50%; border: 1px solid var(--color-text-900); display: flex; align-items: center; justify-content: center; }
     .weather-details h2 { font-size: 1.35rem; margin: 0 0 0.75rem 0; color: var(--color-text-900); white-space: pre-wrap; }   
     .temp-info { color: var(--color-text-600); margin: 0 0 0.5rem 0; }
     .dust-info { color: var(--color-text-600); margin: 0 0 0.25rem 0; font-size: 0.9rem; }

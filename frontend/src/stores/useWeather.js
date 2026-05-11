@@ -41,9 +41,13 @@ export const fetchWeatherData = async (regionName) => {
         const weatherData = await weatherRes.json();
         const recommendData = await recommendRes.json();
 
-        // 🌟 백엔드에서 받은 배열 데이터 추출 (안전하게 빈 배열 폴백 추가)
+        // 백엔드에서 받은 배열 데이터 추출 (안전하게 빈 배열 폴백 추가)
         const tempArray = weatherData.temp || [];
         const rainArray = weatherData.rain || [];
+        const skyArray = weatherData.sky || [];
+        const updateTime = new Date();
+
+        updateTime.setMinutes(Math.floor(updateTime.getMinutes() / 30) * 30);
 
         // 1. 현재 날씨 데이터 매핑 (배열의 첫 번째 값을 현재 날씨로 사용)
         currentWeather.value = {
@@ -54,8 +58,9 @@ export const fetchWeatherData = async (regionName) => {
             pm25Status: getDustStatusText(weatherData.pm25Status),
             pm25: weatherData.pm25 || 0,
             o3: weatherData.o3 || 0,
-            rain: rainArray.length > 0 ? rainArray[0] : '강수없음', // pop, popform을 rain으로 통합
-            updatedAt: new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: 'numeric', hour12: true })
+            rain: rainArray.length > 0 ? rainArray[0] : '강수없음',
+            sky: skyArray.length > 0 ? skyArray[0] : '맑음',
+            updatedAt: updateTime.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: 'numeric', hour12: true })
         };
 
         // 2. 현재 옷차림 추천 데이터 매핑
@@ -78,6 +83,7 @@ export const fetchWeatherData = async (regionName) => {
                 time: date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true }),
                 temp: Math.round(Number(tempStr)), // 시간별 기온 (배열에서 추출)
                 rain: rainArray[index] || '강수없음', // 시간별 강수 (배열에서 추출)
+                sky: skyArray[index] || '맑음', // 시간별 하늘 상태 (배열에서 추출)
                 pm25: weatherData.pm25 || 0, // 하루 단위 동일 데이터
                 pm25Status: getDustStatusText(weatherData.pm25Status) // 하루 단위 동일 데이터
             };

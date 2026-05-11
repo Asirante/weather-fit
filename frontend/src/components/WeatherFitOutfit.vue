@@ -61,7 +61,7 @@
 
                             <template v-else>
                                 <div class="icon-placeholder">
-                                    {{ item.icon }}
+                                    {{ item.type }}
                                 </div>
                                 <p class="item-desc">{{ item.description }}</p>
                                 <h3 class="item-name">{{ item.name }}</h3>
@@ -82,7 +82,7 @@
                             @click="selectHour(index)"
                         >
                             <div class="time">{{ data.time }} {{ index === 0 ? '(지금)' : '' }}</div>
-                            <div class="icon-placeholder small">{{ getWeatherIcon(data.rain) }}</div>
+                            <div class="icon-placeholder small">{{ getWeatherIcon(data.rain, data.sky) }}</div>
                             <div class="temp">{{ data.temp }}°C</div>
                         </div>
                     </div>
@@ -210,34 +210,69 @@
 
         if (!weather || !outfit) return items;
 
-        // 상의 처리
-        items.push({ 
-            id: 1, 
-            type: '일반', 
-            icon: '👕', 
-            name: outfit.top, 
-            description: '추천 상의'
-        });
+        // 1. 상의 - 내용에 따라 아이콘 동적 변경
+        if (outfit.top.includes('반팔')){
+            items.push({ 
+                id: 1, 
+                type: '👕', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        } else if (outfit.top.includes('긴팔')){
+            items.push({ 
+                id: 1, 
+                type: '👔', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        } else if (outfit.top.includes('재킷')){
+            items.push({ 
+                id: 1, 
+                type: '🧥', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        } else if (outfit.top.includes('가죽')){
+            items.push({ 
+                id: 1, 
+                type: '🧥', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        } else if (outfit.top.includes('패딩')){
+            items.push({ 
+                id: 1, 
+                type: '🧣', 
+                name: outfit.top, 
+                description: '추천 상의' 
+            });
+        }
 
-        // 하의 처리
-        items.push({ 
-            id: 2, 
-            type: '일반', 
-            icon: '👖', 
-            name: outfit.bottom, 
-            description: '추천 하의' 
-        });
+        // 2. 하의
+        if (outfit.bottom.includes('반바지')){
+            items.push({ 
+                id: 2, 
+                type: '🩳', 
+                name: outfit.bottom, 
+                description: '추천 하의' 
+            });
+        } else{
+            items.push({ 
+                id: 2, 
+                type: '👖', 
+                name: outfit.bottom, 
+                description: '추천 하의' 
+            });
+        }
 
-        // 챙길 물건(pack) 처리: 문자열에 우산이 포함되면 우산 아이콘, 아니면 상황에 맞게 렌더링
+        // 3. 준비물 (pack) - 내용에 따라 아이콘 동적 변경
         let packIcon = '✋';
         if (outfit.pack.includes('우산')) packIcon = '☔';
-        else if (weather.popform === '맑음' && outfit.pack === '불필요') packIcon = '✋';
-        else if (weather.popform === '눈') packIcon = '🌨️';
+        else if (weather.sky.includes('눈')) packIcon = '🌨️';
 
         items.push({ 
             id: 3, 
-            type: '일반', 
-            icon: packIcon, 
+            type: packIcon, 
             name: outfit.pack === '불필요' ? '없음' : outfit.pack, 
             description: '추천 소지품'
         });
@@ -271,10 +306,17 @@
         return 'bg-bad'; // 나쁨, 매우나쁨
     };
 
-    const getWeatherIcon = (rain) => {
+    const getWeatherIcon = (rain, sky) => {
         switch (rain) {
-            case '강수없음': return '☀️';
-            default: return '🌧️'; 
+            case '강수없음': 
+                if (sky === '맑음') return '☀️';
+                if (sky === '흐림') return '⛅';
+                break;
+            default:
+                if (sky.includes('비')) return '🌧️';
+                if (sky.includes('눈')) return '🌨️';
+                if (sky.includes('흐림')) return '⛅';
+                break;
         }
     };
 
