@@ -35,6 +35,7 @@
                         @click="clickHistory(history)"
                     >
                         <h3 class="result-name">🕒 {{ history }}</h3>
+                        <button class="delete-btn" @click.stop="removeHistory(index)" title="기록 삭제">✕</button>
                     </div>
                 </div>
             </div>
@@ -114,7 +115,6 @@
     const isUnsupported = ref(false); 
     const lastAttemptedRegion = ref(''); 
 
-    // 하단 유리창 패널의 표시 여부를 결정하는 스위치 (초기값 false)
     const showBottomPanel = ref(false);
 
     let map = null;
@@ -198,8 +198,6 @@
         const officialName = targetFeature.properties.adm_nm;
         
         lastAttemptedRegion.value = officialName;
-
-        // 새로운 검색을 시작할 때 패널을 닫아 애니메이션이 다시 동작할 준비를 합니다.
         showBottomPanel.value = false;
 
         geocoder.addressSearch(officialName, async (result, status) => {
@@ -219,8 +217,6 @@
                 showAutoComplete.value = false;
                 
                 addToHistory(officialName);
-
-                // 모든 처리가 끝난 후 패널 스위치를 켭니다 (이때 slide-up 발생!)
                 showBottomPanel.value = true;
             }
         });
@@ -228,6 +224,13 @@
 
     const clickHistory = (historyName) => {
         searchAddress(historyName);
+    };
+
+    // 🌟 추가: 검색 기록 삭제 함수
+    const removeHistory = (index) => {
+        // usehistory.js의 배열에서 해당 인덱스의 항목을 제거합니다.
+        // localStorage 등의 동기화 로직이 store 내부에 있다면 자동으로 반영됩니다.
+        searchHistory.value.splice(index, 1);
     };
 
     const getDustClass = (status) => {
@@ -243,19 +246,17 @@
         }
 
         const regionToPass = isUnsupported.value ? '인천광역시 남동구 구월3동' : currentWeather.value.location;
-
         addToHistory(regionToPass); 
-
         router.push({ path: '/outfit', query: { region: regionToPass } });
     };
-    // 지역 이름을 '시/도'와 '구/동' 2줄로 나누기 위한 함수
+
     const getLocationParts = (location) => {
         if (!location) return { city: '', district: '' };
         const parts = location.split(' ');
         if (parts.length >= 2) {
             return {
-                city: parts[0], // 예: 인천광역시
-                district: parts.slice(1).join(' ') // 예: 미추홀구 학익1동
+                city: parts[0], 
+                district: parts.slice(1).join(' ') 
             };
         }
         return { city: location, district: '' };
@@ -277,18 +278,16 @@
 </script>
 
 <style scoped>
-    /* 수정 3: 유리창 패널 내부 배치 및 넉넉한 간격(gap) 조절 */
     .weather-content { 
         display: flex; 
         align-items: center; 
         justify-content: space-between; 
         width: 100%; 
-        gap: 2rem; /* 버튼과 텍스트 사이 자연스러운 여백 추가 */
+        gap: 2rem; 
     }
     
     .weather-data-box { display: flex; align-items: center; gap: 3rem; flex: 1; }
 
-    /* 지원하지 않는 지역 메시지 수직 중앙 정렬 */
     .unsupported-msg-box { 
         display: flex; 
         flex-direction: column; 
@@ -300,24 +299,21 @@
     .search-layout { flex: 1; max-width: 1200px; width: 100%; margin: 2rem auto; padding: 0 1rem; display: grid; grid-template-columns: 380px 1fr; gap: 1.5rem; box-sizing: border-box; }
     .left-panel { display: flex; flex-direction: column; gap: 1.5rem; align-items: stretch; width: 100%; }
     
-    /* 검색창 컨테이너 */
     .search-box-container { position: relative; display: flex; gap: 0.5rem; height: 48px; box-sizing: border-box; z-index: 50; }
     .search-input-wrapper { position: relative; flex: 1; display: flex; align-items: center; background: #FFFFFF; border: 1px solid var(--color-neutral-200); border-radius: 8px; padding: 0 1rem; box-sizing: border-box; height: 100%; }
     .search-input { flex: 1; height: 100%; border: none; outline: none; font-size: 0.95rem; color: var(--color-text-900); padding: 0; margin-left: 0.5rem; width: 100%; }
     .search-submit-btn { background-color: var(--color-red-500); color: #FFFFFF; border: none; border-radius: 8px; padding: 0 1.5rem; font-weight: 600; font-size: 1rem; cursor: pointer; white-space: nowrap; height: 100%; box-sizing: border-box; }
     
-    /* 자동완성 */
     .autocomplete-list { position: absolute; top: calc(100% + 8px); left: 0; width: 100%; background: #FFFFFF; border: 1px solid var(--color-neutral-200); border-radius: 8px; margin: 0; padding: 0; list-style-type: none !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 999; max-height: 250px; overflow-y: auto; }
     .autocomplete-item { padding: 0.8rem 1.2rem; cursor: pointer; border-bottom: 1px solid var(--color-neutral-100); font-size: 0.95rem; color: var(--color-text-900); text-align: left; }
 
-    /* 지도 섹션 */
     .map-placeholder {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         height: 100%;
-        min-height: 550px; /* 맵 높이와 동일하게 보장 */
+        min-height: 550px; 
         background-color: var(--color-neutral-50, #f8fafc);
         color: var(--color-text-600, #475569);
         font-weight: 600;
@@ -327,42 +323,19 @@
     .map-section { position: relative; background: white; border-radius: 12px; border: 1px solid var(--color-neutral-200); overflow: hidden; }
     .map-container { width: 100%; height: 100%; min-height: 550px; }
     
-    /* 로딩 스피너 스타일 */
     .spinner {
         width: 50px;
         height: 50px;
-        border: 5px solid var(--color-neutral-200, #e2e8f0); /* 옅은 회색 테두리 */
-        border-top: 5px solid var(--color-amber-500, #f59e0b); /* 강조 포인트 색상 */
+        border: 5px solid var(--color-neutral-200, #e2e8f0); 
+        border-top: 5px solid var(--color-amber-500, #f59e0b); 
         border-radius: 50%;
-        animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite; /* 부드럽게 회전 */
+        animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite; 
     }
-    /* 스피너 회전 애니메이션 키프레임 */
     @keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
     }
 
-    /* 하단 고정 날씨 패널 높이 고정 및 중앙 정렬 */
-    .bottom-weather-panel { 
-        position: absolute; 
-        bottom: 20px; left: 20px; right: 20px; z-index: 10; 
-        background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); 
-        border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 16px; 
-        padding: 1.5rem 2rem; 
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); 
-        min-height: 115px; /* 지원지역/미지원지역 높이 일정하게 강제 고정 */
-        display: flex;
-        align-items: center;
-        box-sizing: border-box;
-    }
-    
-    /* 최근 검색 기록 텍스트 말줄임표 처리 보강 */
-    .search-results-container { background: #FFFFFF; border-radius: 12px; border: 1px solid var(--color-neutral-200); padding: 1.5rem; flex: 1; }
-    .result-card { border: 1px solid var(--color-neutral-200); border-radius: 8px; padding: 1rem; margin-top: 0.5rem; cursor: pointer; }
-    .result-name { font-size: 1.05rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-900); }
-    .empty-history { color: var(--color-text-400); text-align: center; margin-top: 2rem; }
-
-    /* --- 하단 고정 날씨 패널 (반투명 유리 효과) --- */
     .bottom-weather-panel { 
         position: absolute; 
         bottom: 20px; left: 20px; right: 20px; z-index: 10; 
@@ -376,18 +349,40 @@
         box-sizing: border-box;
     }
     
-    .weather-content { 
+    .search-results-container { background: #FFFFFF; border-radius: 12px; border: 1px solid var(--color-neutral-200); padding: 1.5rem; flex: 1; }
+    
+    /* 🌟 수정: result-card를 flex로 변경하여 텍스트와 삭제 버튼을 양끝에 배치 */
+    .result-card { 
+        border: 1px solid var(--color-neutral-200); 
+        border-radius: 8px; 
+        padding: 1rem; 
+        margin-top: 0.5rem; 
+        cursor: pointer; 
         display: flex; 
         align-items: center; 
         justify-content: space-between; 
-        width: 100%; 
-        gap: 2rem; 
+        transition: background-color 0.2s;
+    }
+    .result-card:hover { background-color: var(--color-neutral-50); }
+    
+    .result-name { font-size: 1.05rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-900); flex: 1; }
+    
+    /* 🌟 추가: 삭제 버튼 디자인 */
+    .delete-btn {
+        background: none;
+        border: none;
+        color: var(--color-text-400);
+        font-size: 1.1rem;
+        cursor: pointer;
+        padding: 0.2rem 0.5rem;
+        transition: color 0.2s;
+    }
+    .delete-btn:hover {
+        color: var(--color-red-500);
     }
     
-    .weather-data-box { display: flex; align-items: center; gap: 3rem; flex: 1; }
-    .weather-data-box.unsupported { gap: 2rem; }
+    .empty-history { color: var(--color-text-400); text-align: center; margin-top: 2rem; }
 
-    /* 지역 이름 2줄 텍스트 스타일 */
     .location-group { min-width: 150px; flex-shrink: 0; }
     .area-title { margin: 0; line-height: 1.3; }
     .area-title .city { font-size: 1rem; font-weight: 600; color: var(--color-text-600); }
@@ -396,7 +391,6 @@
     .info-group .label { font-size: 0.75rem; color: #64748b; display: block; margin-bottom: 0.2rem; }
     .status-warning { color: var(--color-red-500); font-weight: 700; font-size: 1.1rem; flex: 1;}
     
-    /* 온도 및 미세먼지 강제 1줄 처리 */
     .data-group { display: flex; align-items: center; gap: 1.5rem; flex-shrink: 0; }
     .temp-display { display: flex; align-items: center; gap: 0.5rem; white-space: nowrap; }
     .temp-display .icon { font-size: 2rem; }
@@ -404,9 +398,8 @@
     
     .divider { width: 1px; height: 30px; background: #cbd5e1; }
     
-    /* 미세먼지를 무조건 가로 1줄로 강제 고정 */
     .dust-display { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; }
-    .dust-display .dust-label { font-size: 0.9rem; color: #64748b; margin: 0; } /* block 속성 제거 */
+    .dust-display .dust-label { font-size: 0.9rem; color: #64748b; margin: 0; }
     
     .status { font-weight: 700; font-size: 1.1rem; }
     .status.good { color: #10b981; }
@@ -416,12 +409,11 @@
     .action-btn { background: #1e293b; color: white; border: none; padding: 0.8rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; transition: transform 0.2s; white-space: nowrap; }
     .action-btn:hover { transform: scale(1.05); }
 
-   /* 애니메이션 조금 더 부드럽고 자연스럽게 수정 */
     .slide-up-enter-active, .slide-up-leave-active { 
         transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); 
     }
     .slide-up-enter-from, .slide-up-leave-to { 
-        transform: translateY(40px); /* 아래에서 위로 올라오는 거리 */
+        transform: translateY(40px); 
         opacity: 0; 
     }
 </style>

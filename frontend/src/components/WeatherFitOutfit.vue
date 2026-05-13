@@ -1,9 +1,9 @@
 <template>
     <main class="outfit-main-content">
         
-        <div v-if="isLoading" class="status-screen">
-            <h2>날씨 데이터를 분석하고 있습니다... ⏳</h2>
-            <p>잠시만 기다려주세요.</p>
+        <div v-if="isLoading" class="loading-screen">
+            <div class="spinner"></div>
+            <p>날씨 데이터를 분석하고 있습니다...</p>
         </div>
 
         <div v-else-if="errorMessage" class="status-screen error">
@@ -90,7 +90,7 @@
             </div>
         </div>
 
-        <section class="guide-container">
+        <section v-if="!isLoading && currentWeather" class="guide-container">
         <div class="guide-banner">
             <div class="banner-content">
                 <span class="guide-badge">🧥 복장 가이드라인</span>
@@ -164,9 +164,11 @@
                 </div>
             </aside>
         </div>
-    </section>
+        </section>
+
     </main>
 
+    
 </template>
 
 <script setup>
@@ -268,7 +270,7 @@
         // 3. 준비물 (pack) - 내용에 따라 아이콘 동적 변경
         let packIcon = '✋';
         if (outfit.pack.includes('우산')) packIcon = '☔';
-        else if (weather.sky.includes('눈')) packIcon = '🌨️';
+        else if (weather.sky && weather.sky.includes('눈')) packIcon = '🌨️';
 
         items.push({ 
             id: 3, 
@@ -281,7 +283,7 @@
         items.push({ 
             id: 4, 
             type: '마스크', 
-            name: outfit.mask, // 백엔드 값: "마스크 선택" 또는 "마스크 필수"
+            name: outfit.mask === '마스트 선택' ? '자유' : outfit.mask,  
             description: '식약처 인증 마스크' 
         });
 
@@ -307,6 +309,7 @@
     };
 
     const getWeatherIcon = (rain, sky) => {
+        if(!sky) return '🌤️'; // fallback
         switch (rain) {
             case '강수없음': 
                 if (sky === '맑음') return '☀️';
@@ -318,6 +321,7 @@
                 if (sky.includes('흐림')) return '⛅';
                 break;
         }
+        return '🌤️';
     };
 
     // 정적 가이드 데이터
@@ -339,29 +343,42 @@
 </script>
 
 <style scoped>
-    /* 로딩 및 에러 상태 화면 */
-    .status-screen {
+    /* 🌟 스피너 화면을 위한 CSS 추가 */
+    .loading-screen {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         height: 60vh;
-        color: var(--color-text-900);
-        text-align: center;
-    }
-    
-    .status-screen.error {
-        color: var(--color-red-500);
-    }
-    
-    .status-screen h2 {
-        font-size: 1.8rem;
-        margin-bottom: 1rem;
-    }
-    
-    .status-screen p {
-        font-size: 1.1rem;
         color: var(--color-text-600);
+        font-weight: 600;
+        font-size: 1.1rem;
+        gap: 1.5rem;
+    }
+    
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid var(--color-neutral-200);
+        border-top: 5px solid var(--color-amber-500);
+        border-radius: 50%;
+        animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* 에러 상태 화면 */
+    .status-screen.error {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 60vh;
+        color: var(--color-red-500);
+        font-size: 1.2rem;
+        font-weight: 600;
     }
 
     /* 전체 레이아웃 */
@@ -525,7 +542,7 @@
     .guide-container { 
         max-width: 1200px; 
         width: 100%; 
-        margin: 0 auto 4rem auto; 
+        margin: 0 auto;
         padding: 0 1rem; 
         font-family: 'Pretendard', sans-serif; 
         box-sizing: border-box;

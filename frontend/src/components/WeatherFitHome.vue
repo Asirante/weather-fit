@@ -1,5 +1,10 @@
 <template>
-    <main v-if="currentWeather" class="main-content">      
+    <div v-if="isLoading || isInitializing" class="loading-screen">
+        <div class="spinner"></div>
+        <p>날씨 데이터를 분석하고 있습니다...</p>
+    </div>
+
+    <main v-else-if="currentWeather" class="main-content">      
         <div class="top-section">        
             <section class="card current-weather-card">
                 <div class="weather-info-left">
@@ -63,28 +68,27 @@
 </template>
 
 <script setup>
-    import { computed, onMounted } from 'vue';
+    import { computed, onMounted, ref } from 'vue';
     import { searchHistory } from '../stores/usehistory';
-    import { currentWeather, hourlyData, hourlyOutfitData, fetchWeatherData } from '../stores/useWeather';
+    import { currentWeather, hourlyData, hourlyOutfitData, fetchWeatherData, isLoading } from '../stores/useWeather';
 
-    // 화면 진입 시 최우선 실행 로직
+    const isInitializing = ref(true);
+
     onMounted(() => {
-        if (searchHistory.value.length > 0) {
-            fetchWeatherData(searchHistory.value[0]);
-        } else {
-            fetchCurrentLocationWeather();
-        }
+        fetchCurrentLocationWeather();
     });
 
-    const fetchCurrentLocationWeather = () => {
-        const fallbackToHistory = () => {
-            if (searchHistory.value.length > 0) {
-                fetchWeatherData(searchHistory.value[0]);
-            } else {
-                fetchWeatherData('인천광역시 남동구 구월3동'); // 기본 지역 설정 (인천 시청)
-            }
-        };
+    const fallbackToHistory = async () => {
+        if (searchHistory.value.length > 0) {
+            await fetchWeatherData(searchHistory.value[0]);
+        } else {
+            await fetchWeatherData('인천광역시 남동구 구월3동'); 
+        }
+        isInitializing.value = false; // 모든 처리가 끝나면 로딩 해제
+    };
 
+    // 위치 권한으로 행정동명 가져오기
+    const fetchCurrentLocationWeather = () => {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 (position) => {
@@ -94,11 +98,23 @@
                     if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
                         window.kakao.maps.load(() => {
                             const geocoder = new window.kakao.maps.services.Geocoder();
-                            geocoder.coord2RegionCode(lon, lat, (result, status) => {
+                            geocoder.coord2RegionCode(lon, lat, async (result, status) => {
                                 if (status === window.kakao.maps.services.Status.OK) {
+                                    // 행정동 단위(H) 추출
                                     const regionInfo = result.find(r => r.region_type === 'H') || result[0];
-                                    const currentRegionName = `${regionInfo.region_1depth_name} ${regionInfo.region_2depth_name}`;
-                                    fetchWeatherData(currentRegionName);
+                                    
+                                    // 3depth_name(동/읍/면)까지 완벽하게 조합하여 "인천광역시 남동구 구월3동" 포맷 생성
+                                    const currentRegionName = `${regionInfo.region_1depth_name} ${regionInfo.region_2depth_name} ${regionInfo.region_3depth_name}`.trim();
+                                    
+                                    // 날씨 데이터 요청 대기
+                                    await fetchWeatherData(currentRegionName);
+                                    
+                                    // 백엔드에서 지원하지 않는 지역이라 currentWeather가 안 채워졌다면 폴백 실행
+                                    if (!currentWeather.value) {
+                                        fallbackToHistory();
+                                    } else {
+                                        isInitializing.value = false; // 정상 처리 완료
+                                    }
                                 } else {
                                     fallbackToHistory();
                                 }
@@ -112,14 +128,14 @@
                     console.warn("위치 권한 에러:", error);
                     fallbackToHistory();
                 },
-                { timeout: 5000 }
+                { timeout: 5000 } // 위치 탐색 제한 시간 5초
             );
         } else {
             fallbackToHistory();
         }
     };
 
-    // 대기질 현황 계산 (currentWeather 전역 상태 참조)
+    // 대기질 현황 계산 (기존 로직 유지)
     const getAqiStyle = (type, value, status) => {
         let max, excellent, good, warning, danger;
   
@@ -156,76 +172,34 @@
         ]
     });
 
-    // OOTD 아이템 동적 계산 (하드코딩 제거 후 백엔드 데이터 매핑)
     const displayOotdItems = computed(() => {
         const weather = hourlyData.value[0] || null;
-        // 백엔드에서 받아온 첫 번째 시간대의 옷차림 데이터
         const outfit = hourlyOutfitData.value && hourlyOutfitData.value.length > 0 ? hourlyOutfitData.value[0] : null;
         const items = [];
 
-        // 날씨나 옷차림 데이터가 아직 없으면 빈 배열 반환
         if (!weather || !outfit) return items;
 
-
-        // 1. 상의 - 내용에 따라 아이콘 동적 변경
         if (outfit.top.includes('반팔')){
-            items.push({ 
-                id: 1, 
-                type: '👕', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
+            items.push({ id: 1, type: '👕', name: outfit.top, description: '추천 상의' });
         } else if (outfit.top.includes('긴팔')){
-            items.push({ 
-                id: 1, 
-                type: '👔', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
+            items.push({ id: 1, type: '👔', name: outfit.top, description: '추천 상의' });
         } else if (outfit.top.includes('재킷')){
-            items.push({ 
-                id: 1, 
-                type: '🧥', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
+            items.push({ id: 1, type: '🧥', name: outfit.top, description: '추천 상의' });
         } else if (outfit.top.includes('가죽')){
-            items.push({ 
-                id: 1, 
-                type: '🧥', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
+            items.push({ id: 1, type: '🧥', name: outfit.top, description: '추천 상의' });
         } else if (outfit.top.includes('패딩')){
-            items.push({ 
-                id: 1, 
-                type: '🧣', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
+            items.push({ id: 1, type: '🧣', name: outfit.top, description: '추천 상의' });
         }
 
-        // 2. 하의
         if (outfit.bottom.includes('반바지')){
-            items.push({ 
-                id: 2, 
-                type: '🩳', 
-                name: outfit.bottom, 
-                description: '추천 하의' 
-            });
+            items.push({ id: 2, type: '🩳', name: outfit.bottom, description: '추천 하의' });
         } else {
-            items.push({ 
-                id: 2, 
-                type: '👖', 
-                name: outfit.bottom, 
-                description: '추천 하의' 
-            });
+            items.push({ id: 2, type: '👖', name: outfit.bottom, description: '추천 하의' });
         }
 
-        // 3. 준비물 (pack) - 내용에 따라 아이콘 동적 변경
         let packIcon = '✋';
         if (outfit.pack.includes('우산')) packIcon = '☔';
-        else if (weather.sky.includes('눈')) packIcon = '🌨️';
+        else if (weather.sky && weather.sky.includes('눈')) packIcon = '🌨️';
 
         items.push({ 
             id: 3, 
@@ -234,7 +208,6 @@
             description: '추천 소지품'
         });
 
-        // 4. 마스크
         items.push({ 
             id: 4, 
             type: '😷', 
@@ -246,6 +219,7 @@
     });
 
     const getWeatherIcon = (rain, sky) => {
+        if(!sky) return '🌤️'; // fallback
         switch (rain) {
             case '강수없음': 
                 if (sky === '맑음') return '☀️';
@@ -257,10 +231,38 @@
                 if (sky.includes('흐림')) return '⛅';
                 break;
         }
+        return '🌤️';
     };
 
 </script>
+
 <style scoped>
+    .loading-screen {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 60vh;
+        color: var(--color-text-600);
+        font-weight: 600;
+        font-size: 1.1rem;
+        gap: 1.5rem;
+    }
+    
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid var(--color-neutral-200);
+        border-top: 5px solid var(--color-amber-500);
+        border-radius: 50%;
+        animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
     /* ---------------- 공통 요소 ---------------- */
     .card { background-color: #FFFFFF; border-radius: 12px; border: 1px solid var(--color-neutral-200); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
     .section-title { font-size: 1.25rem; font-weight: 700; margin: 0 0 1rem 0; color: var(--color-text-900); }
