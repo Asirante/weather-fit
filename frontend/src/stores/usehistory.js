@@ -1,4 +1,3 @@
-// src/store/useHistory.js
 import { ref, watch } from 'vue';
 
 // 1. 브라우저 저장소(localStorage)에서 기존 기록 불러오기 (없으면 빈 배열)
