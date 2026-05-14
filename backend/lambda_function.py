@@ -207,6 +207,24 @@ def lambda_handler(event, context):
             "pack": pack
         }
 
+        pm10 = str(air_data.get("pm10Grade"))    # 미세먼지 지수
+        pm25 = str(air_data.get("pm25Grade"))    # 초미세먼지 지수
+
+        top = '긴팔 티셔츠, 가디건 후드티, 맨투맨'
+        bottom = '청바지'
+        mask = '마스크 선택'
+        pack = '불필요'
+        
+        if pm10 == '4' or pm25 in ['3', '4']:    # 1(좋음), 2(보통), 3(나쁨), 4(매우나쁨)
+            mask = 'kf94 필수'
+        elif pm10 == '3':mask = 'kf80 권장'
+
+        recommend_data = {
+            "top": top,
+            "bottom": bottom,
+            "mask": mask,
+            "pack": pack
+        }
         return {
             'statusCode': 200,
             'body': json.dumps(recommend_data, ensure_ascii=False)
@@ -253,8 +271,8 @@ def lambda_handler(event, context):
             'statusCode': 200,
             'body': json.dumps(filtered_data, ensure_ascii=False, default=decimal_to_float)
         }
-
-    else:
+    
+    else : 
         return {
             "statusCode": 400,
             "body": json.dumps({"error": "주소 오류"}, ensure_ascii=False)
