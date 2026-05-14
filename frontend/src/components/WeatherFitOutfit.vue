@@ -207,67 +207,36 @@
 
     const displayOotdItems = computed(() => {
         const weather = selectedHourlyWeather.value;
-        const outfit = hourlyOutfitData.value.length > 0 ? hourlyOutfitData.value[selectedHourIndex.value] : null;
+        const outfit = hourlyOutfitData.value && hourlyOutfitData.value.length > 0 ? hourlyOutfitData.value[selectedHourIndex.value] : null;
         const items = [];
 
         if (!weather || !outfit) return items;
 
-        // 1. 상의 - 내용에 따라 아이콘 동적 변경
-        if (outfit.top.includes('반팔')){
-            items.push({ 
-                id: 1, 
-                type: '👕', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
-        } else if (outfit.top.includes('긴팔')){
-            items.push({ 
-                id: 1, 
-                type: '👔', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
-        } else if (outfit.top.includes('재킷')){
-            items.push({ 
-                id: 1, 
-                type: '🧥', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
-        } else if (outfit.top.includes('가죽')){
-            items.push({ 
-                id: 1, 
-                type: '🧥', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
-        } else if (outfit.top.includes('패딩')){
-            items.push({ 
-                id: 1, 
-                type: '🧣', 
-                name: outfit.top, 
-                description: '추천 상의' 
-            });
-        }
+        // 1. 상의 - 백엔드의 실제 데이터(outfit.top)를 그대로 쓰면서 키워드로 아이콘만 지정합니다.
+        let topIcon = '👕';
+        if (outfit.top.includes('재킷') || outfit.top.includes('가죽') || outfit.top.includes('야상')) topIcon = '🧥';
+        else if (outfit.top.includes('패딩') || outfit.top.includes('코트')) topIcon = '🧣';
+        else if (outfit.top.includes('긴팔') || outfit.top.includes('니트') || outfit.top.includes('가디건') || outfit.top.includes('맨투맨')) topIcon = '👔';
 
-        // 2. 하의
-        if (outfit.bottom.includes('반바지')){
-            items.push({ 
-                id: 2, 
-                type: '🩳', 
-                name: outfit.bottom, 
-                description: '추천 하의' 
-            });
-        } else{
-            items.push({ 
-                id: 2, 
-                type: '👖', 
-                name: outfit.bottom, 
-                description: '추천 하의' 
-            });
-        }
+        items.push({ 
+            id: 1, 
+            type: topIcon, 
+            name: outfit.top, 
+            description: '추천 상의' 
+        });
 
-        // 3. 준비물 (pack) - 내용에 따라 아이콘 동적 변경
+        // 2. 하의 - 마찬가지로 실제 데이터(outfit.bottom)를 그대로 적용합니다.
+        let bottomIcon = '👖';
+        if (outfit.bottom.includes('반바지') || outfit.bottom.includes('치마')) bottomIcon = '🩳';
+
+        items.push({ 
+            id: 2, 
+            type: bottomIcon, 
+            name: outfit.bottom, 
+            description: '추천 하의' 
+        });
+
+        // 3. 준비물 (pack)
         let packIcon = '✋';
         if (outfit.pack.includes('우산')) packIcon = '☔';
         else if (weather.sky && weather.sky.includes('눈')) packIcon = '🌨️';
@@ -279,11 +248,11 @@
             description: '추천 소지품'
         });
 
-        // 마스크 처리
+        // 4. 마스크 처리
         items.push({ 
             id: 4, 
             type: '마스크', 
-            name: outfit.mask === '마스트 선택' ? '자유' : outfit.mask,  
+            name: outfit.mask === '마스크 선택' ? '자유' : outfit.mask,  
             description: '식약처 인증 마스크' 
         });
 

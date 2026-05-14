@@ -185,72 +185,80 @@ def lambda_handler(event, context):
             pm10 = str(air_data.get("pm10Grade", ""))
             pm25 = str(air_data.get("pm25Grade", ""))
 
-            temp = int(weather_data[0])
-            rain = rain_data[0]
+            recommend_list = []
+            # 현재부터 최대 6개(5시간 후)까지의 시간대 데이터 계산
+            loop_count = min(
+                6, len(weather_data), len(rain_data)
+            )
 
-            top = "긴팔 티셔츠, 가디건 후드티, 맨투맨"
-            bottom = "청바지"
-            mask = "마스크 선택"
-            pack = "불필요"
+            for i in range(loop_count):
+                temp = int(weather_data[i])
+                rain = rain_data[i]
 
-            # 온도에 따른 옷차림 로직
-            if temp >= 28:
-                top, bottom = (
-                    "민소매, 반팔 린넨소재",
-                    "반바지, 짧은 치마, 린넨 소재",
-                )
-            elif temp >= 23:
-                top, bottom = (
-                    "반팔, 얇은 셔츠",
-                    "반바지, 면바지",
-                )
-            elif temp >= 17:
-                top, bottom = (
-                    "긴팔 티셔츠, 가디건 후드티, 맨투맨",
-                    "청바지",
-                )
-            elif temp >= 12:
-                top, bottom = (
-                    "가디건, 야상, 재킷, 니트",
-                    "두꺼운 긴바지",
-                )
-            elif temp >= 5:
-                top, bottom = (
-                    "코트, 가죽재킷, 두꺼운 니트",
-                    "기모바지",
-                )
-            else:
-                top, bottom = (
-                    "패딩, 두꺼운 롱코트, 방한복, 기모 이너",
-                    "방한복, 기모 이너",
-                )
-
-            # 미세먼지에 따른 마스크 로직
-            if pm10 == "4" or pm25 in ["3", "4"]:
-                mask = "kf94 필수"
-            elif pm10 == "3" or pm25 == "3":
-                mask = "kf80 권장"
-
-            # 강수에 따른 우산 로직
-            if rain in ["강수없음", "0"]:
+                top = "긴팔 티셔츠, 가디건 후드티, 맨투맨"
+                bottom = "청바지"
+                mask = "마스크 선택"
                 pack = "불필요"
-            elif rain == "1mm 미만":
-                pack = "접이식 우산"
-            else:
-                pack = "우산 필수"
 
-            # ★ 논리 오류 수정: 밑에서 변수를 다시 덮어쓰던 코드 삭제됨
-            recommend_data = {
-                "top": top,
-                "bottom": bottom,
-                "mask": mask,
-                "pack": pack,
-            }
+                # 온도에 따른 옷차림 로직
+                if temp >= 28:
+                    top, bottom = (
+                        "민소매, 반팔 린넨소재",
+                        "반바지, 짧은 치마, 린넨 소재",
+                    )
+                elif temp >= 23:
+                    top, bottom = (
+                        "반팔, 얇은 셔츠",
+                        "반바지, 면바지",
+                    )
+                elif temp >= 17:
+                    top, bottom = (
+                        "긴팔 티셔츠, 가디건 후드티, 맨투맨",
+                        "청바지",
+                    )
+                elif temp >= 12:
+                    top, bottom = (
+                        "가디건, 야상, 재킷, 니트",
+                        "두꺼운 긴바지",
+                    )
+                elif temp >= 5:
+                    top, bottom = (
+                        "코트, 가죽재킷, 두꺼운 니트",
+                        "기모바지",
+                    )
+                else:
+                    top, bottom = (
+                        "패딩, 두꺼운 롱코트, 방한복, 기모 이너",
+                        "방한복, 기모 이너",
+                    )
+
+                # 미세먼지에 따른 마스크 로직
+                if pm10 == "4" or pm25 in ["3", "4"]:
+                    mask = "kf94 필수"
+                elif pm10 == "3" or pm25 == "3":
+                    mask = "kf80 권장"
+
+                # 강수에 따른 우산 로직
+                if rain in ["강수없음", "0"]:
+                    pack = "불필요"
+                elif rain == "1mm 미만":
+                    pack = "접이식 우산"
+                else:
+                    pack = "우산 필수"
+
+                recommend_list.append(
+                    {
+                        "top": top,
+                        "bottom": bottom,
+                        "mask": mask,
+                        "pack": pack,
+                    }
+                )
 
             return {
                 "statusCode": 200,
                 "body": json.dumps(
-                    recommend_data, ensure_ascii=False
+                    recommend_list, ensure_ascii=False
                 ),
             }
 
