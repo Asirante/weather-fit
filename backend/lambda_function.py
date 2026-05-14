@@ -6,9 +6,10 @@ from io import StringIO
 from urllib.parse import parse_qs, unquote
 from decimal import Decimal
 
+# 매핑 파일에서 딕셔너리 가져오기 (코드 중복 제거)
 from mapping import gu_to_station
 
-# 환경 변수 감지
+# 1. 환경 변수 감지
 IS_LOCAL = os.environ.get("AWS_SAM_LOCAL") == "true"
 
 if IS_LOCAL:
@@ -41,6 +42,7 @@ weather_table = dynamodb.Table(WEATHER_TABLE_NAME)
 BUCKET_NAME = "inhatc-team2-5-raw-data"
 PREFIX = "raw/forecast/ultra_short_forecast/"
 
+# ★ 성능 개선: S3에서 가져온 데이터를 람다 컨테이너 메모리에 캐싱
 _CSV_CACHE = None
 _LATEST_FILE_KEY = None
 
@@ -54,6 +56,7 @@ def decimal_to_float(obj):
 def load_csv_rows():
     global _CSV_CACHE, _LATEST_FILE_KEY
 
+    # S3에서 최신 파일 목록 조회
     response = s3.list_objects_v2(
         Bucket=BUCKET_NAME, Prefix=PREFIX
     )
@@ -65,12 +68,15 @@ def load_csv_rows():
     )
     latest_key = latest_file["Key"]
 
+    # ★ 성능 개선: 이전에 캐싱된 파일과 키가 같다면 S3에서 다운로드하지 않고 캐시 반환
     if (
         _CSV_CACHE is not None
         and _LATEST_FILE_KEY == latest_key
     ):
+        print("Using cached CSV data")
         return _CSV_CACHE
 
+    print(f"Loading new file from S3: {latest_key}")
     file_response = s3.get_object(
         Bucket=BUCKET_NAME, Key=latest_key
     )
@@ -79,6 +85,7 @@ def load_csv_rows():
     )
     csv_file = StringIO(csv_content)
 
+    # 캐시 업데이트
     _CSV_CACHE = list(csv.DictReader(csv_file))
     _LATEST_FILE_KEY = latest_key
 
@@ -146,6 +153,7 @@ def lambda_handler(event, context):
         )
         air_data = response.get("Item", {})
 
+        # CSV 데이터 로드 (캐시 적용됨)
         rows = load_csv_rows()
 
         weather_data = get_temperature_data(
@@ -161,6 +169,7 @@ def lambda_handler(event, context):
             rows, raw_station, "PTY"
         )
 
+        # ★ 500 에러 방지: 데이터가 하나라도 없으면 에러 처리
         if not weather_data or not rain_data:
             return {
                 "statusCode": 404,
@@ -172,9 +181,6 @@ def lambda_handler(event, context):
                 ),
             }
 
-        # ==========================================
-        # 1. 의상 추천 API (/recommend)
-        # ==========================================
         if path == "/recommend":
             pm10 = str(air_data.get("pm10Grade", ""))
             pm25 = str(air_data.get("pm25Grade", ""))
@@ -182,60 +188,50 @@ def lambda_handler(event, context):
             temp = int(weather_data[0])
             rain = rain_data[0]
 
-            top = [
-                "긴팔 티셔츠",
-                "가디건",
-                "후드티",
-                "맨투맨",
-            ]
-            bottom = ["청바지"]
+            top = "긴팔 티셔츠, 가디건 후드티, 맨투맨"
+            bottom = "청바지"
             mask = "마스크 선택"
             pack = "불필요"
 
+            # 온도에 따른 옷차림 로직
             if temp >= 28:
-                top, bottom = [
-                    "민소매",
-                    "반팔",
-                    "린넨 소재",
-                ], ["반바지", "짧은 치마"]
+                top, bottom = (
+                    "민소매, 반팔 린넨소재",
+                    "반바지, 짧은 치마, 린넨 소재",
+                )
             elif temp >= 23:
-                top, bottom = ["반팔", "얇은 셔츠"], [
-                    "반바지",
-                    "면바지",
-                ]
+                top, bottom = (
+                    "반팔, 얇은 셔츠",
+                    "반바지, 면바지",
+                )
             elif temp >= 17:
-                top, bottom = [
-                    "긴팔 티셔츠",
-                    "가디건",
-                    "후드티",
-                    "맨투맨",
-                ], ["청바지", "면바지", "슬랙스"]
+                top, bottom = (
+                    "긴팔 티셔츠, 가디건 후드티, 맨투맨",
+                    "청바지",
+                )
             elif temp >= 12:
-                top, bottom = [
-                    "가디건",
-                    "야상",
-                    "재킷",
-                    "니트",
-                ], ["두꺼운 긴바지", "청바지"]
+                top, bottom = (
+                    "가디건, 야상, 재킷, 니트",
+                    "두꺼운 긴바지",
+                )
             elif temp >= 5:
-                top, bottom = [
-                    "코트",
-                    "가죽재킷",
-                    "두꺼운 니트",
-                ], ["기모바지", "청바지"]
+                top, bottom = (
+                    "코트, 가죽재킷, 두꺼운 니트",
+                    "기모바지",
+                )
             else:
-                top, bottom = [
-                    "패딩",
-                    "두꺼운 롱코트",
-                    "방한복",
-                    "기모 이너",
-                ], ["방한복", "기모바지"]
+                top, bottom = (
+                    "패딩, 두꺼운 롱코트, 방한복, 기모 이너",
+                    "방한복, 기모 이너",
+                )
 
+            # 미세먼지에 따른 마스크 로직
             if pm10 == "4" or pm25 in ["3", "4"]:
                 mask = "kf94 필수"
             elif pm10 == "3" or pm25 == "3":
                 mask = "kf80 권장"
 
+            # 강수에 따른 우산 로직
             if rain in ["강수없음", "0"]:
                 pack = "불필요"
             elif rain == "1mm 미만":
@@ -243,6 +239,7 @@ def lambda_handler(event, context):
             else:
                 pack = "우산 필수"
 
+            # ★ 논리 오류 수정: 밑에서 변수를 다시 덮어쓰던 코드 삭제됨
             recommend_data = {
                 "top": top,
                 "bottom": bottom,
@@ -257,9 +254,6 @@ def lambda_handler(event, context):
                 ),
             }
 
-        # ==========================================
-        # 2. 날씨 정보 API (/weather)
-        # ==========================================
         elif path == "/weather":
             sky_result = []
 
@@ -307,6 +301,7 @@ def lambda_handler(event, context):
             }
 
     except Exception as e:
+        # 예상치 못한 에러가 났을 때 Lambda가 죽어버리지 않도록 방어
         print(f"Error occurred: {str(e)}")
         return {
             "statusCode": 500,
