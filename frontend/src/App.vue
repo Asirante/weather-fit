@@ -2,7 +2,7 @@
   <div class="weatherfit-app">
     <header class="header">
       <div class="header-container">
-        <h1 class="logo">WeatherFit</h1>
+        <h1 class="logo" @click="goTo('/')">WeatherFit</h1>
         <nav class="nav-menu">
           <button @click="goTo('/')" :class="route.path === '/' ? 'nav-button accent-btn' : 'nav-text-btn'">홈</button>
           <button @click="goTo('/search')" :class="route.path === '/search' ? 'nav-button accent-btn' : 'nav-text-btn'">지역검색</button>
@@ -17,7 +17,6 @@
       <p>© 2026 WeatherFit | 2팀 | 서버리스 아키텍처 기반 옷차림 추천 서비스</p>
     </footer>
   </div>
-
 </template>
 
 <script setup>
@@ -89,7 +88,13 @@
     align-items: center;
   }
 
-  .logo { font-size: 1.75rem; font-weight: 700; margin: 0; }
+  .logo { 
+    font-size: 1.75rem; 
+    font-weight: 700; 
+    margin: 0; 
+    cursor: pointer; 
+  }
+  
   .nav-menu { display: flex; gap: 2rem; align-items: center; }
 
   /* 활성화된 주황색 버튼 */
