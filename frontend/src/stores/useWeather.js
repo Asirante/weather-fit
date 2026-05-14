@@ -17,6 +17,15 @@ const getDustStatusText = (statusCode) => {
     return "보통";
 };
 
+// ✅ Lambda 응답 파싱 헬퍼 - body가 문자열로 감싸져 있으므로 JSON.parse 필요
+const parseLambdaResponse = (raw) => {
+    if (raw && typeof raw.body === 'string') {
+        return JSON.parse(raw.body);
+    }
+    // Lambda Function URL 직접 호출 시 body 없이 바로 데이터가 오는 경우도 대응
+    return raw;
+};
+
 export const fetchWeatherData = async (regionName) => {
     if (currentWeather.value?.location === regionName) return;
 
@@ -38,9 +47,9 @@ export const fetchWeatherData = async (regionName) => {
             throw new Error(`서버 에러 발생 (날씨: ${weatherRes.status}, 추천: ${recommendRes.status})`);
         }
 
-        const weatherData = await weatherRes.json();
-        // ✅ 수정: /recommend는 배열을 반환하므로 배열로 받음
-        const recommendList = await recommendRes.json();
+        // ✅ Lambda는 { statusCode, body: "문자열" } 구조로 반환하므로 body를 파싱
+        const weatherData = parseLambdaResponse(await weatherRes.json());
+        const recommendList = parseLambdaResponse(await recommendRes.json());
 
         // 백엔드에서 받은 배열 데이터 추출
         const tempArray = weatherData.temp || [];
@@ -91,14 +100,13 @@ export const fetchWeatherData = async (regionName) => {
             };
         });
 
-        // ✅ 수정: mockOutfits 제거 → 백엔드의 실제 시간별 추천 데이터를 그대로 사용
+        // 4. 시간별 옷차림 데이터 - 백엔드 실제 데이터 사용
         hourlyOutfitData.value = tempArray.map((_, index) => {
             const date = new Date(today);
             date.setHours(today.getHours() + index);
 
-            // 백엔드 배열에 해당 인덱스가 있으면 사용, 없으면 첫 번째 항목으로 폴백
-            const outfit = (Array.isArray(recommendList) && recommendList[index]) 
-                ? recommendList[index] 
+            const outfit = (Array.isArray(recommendList) && recommendList[index])
+                ? recommendList[index]
                 : firstOutfit;
 
             return {
@@ -116,7 +124,7 @@ export const fetchWeatherData = async (regionName) => {
         currentWeather.value = null;
         currentOutfit.value = null;
         hourlyData.value = [];
-        hourlyOutfitData.value = []; 
+        hourlyOutfitData.value = [];
     } finally {
         isLoading.value = false;
     }
