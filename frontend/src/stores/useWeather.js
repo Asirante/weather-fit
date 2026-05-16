@@ -3,7 +3,7 @@ import { ref } from 'vue';
 export const currentWeather = ref(null);
 export const currentOutfit = ref(null);
 export const hourlyData = ref([]);
-export const hourlyOutfitData = ref([]);
+export const hourlyOutfitData = ref([]); // 🌟 시간별 옷차림 데이터를 담을 ref 추가
 export const isLoading = ref(false);
 export const errorMessage = ref('');
 
@@ -15,15 +15,6 @@ const getDustStatusText = (statusCode) => {
     if (code === "3") return "나쁨";
     if (code === "4") return "매우나쁨";
     return "보통";
-};
-
-// ✅ Lambda 응답 파싱 헬퍼 - body가 문자열로 감싸져 있으므로 JSON.parse 필요
-const parseLambdaResponse = (raw) => {
-    if (raw && typeof raw.body === 'string') {
-        return JSON.parse(raw.body);
-    }
-    // Lambda Function URL 직접 호출 시 body 없이 바로 데이터가 오는 경우도 대응
-    return raw;
 };
 
 export const fetchWeatherData = async (regionName) => {
@@ -47,11 +38,10 @@ export const fetchWeatherData = async (regionName) => {
             throw new Error(`서버 에러 발생 (날씨: ${weatherRes.status}, 추천: ${recommendRes.status})`);
         }
 
-        // ✅ Lambda는 { statusCode, body: "문자열" } 구조로 반환하므로 body를 파싱
-        const weatherData = parseLambdaResponse(await weatherRes.json());
-        const recommendList = parseLambdaResponse(await recommendRes.json());
+        const weatherData = await weatherRes.json();
+        const recommendData = await recommendRes.json();
 
-        // 백엔드에서 받은 배열 데이터 추출
+        // 백엔드에서 받은 배열 데이터 추출 (안전하게 빈 배열 폴백 추가)
         const tempArray = weatherData.temp || [];
         const rainArray = weatherData.rain || [];
         const skyArray = weatherData.sky || [];
@@ -73,48 +63,48 @@ export const fetchWeatherData = async (regionName) => {
             updatedAt: updateTime.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: 'numeric', hour12: true })
         };
 
-        // 2. 현재 옷차림 추천 데이터 매핑 (배열의 첫 번째 항목)
-        const firstOutfit = Array.isArray(recommendList) && recommendList.length > 0 ? recommendList[0] : {};
+        // 2. 현재 옷차림 추천 데이터 매핑
         currentOutfit.value = {
-            top: firstOutfit.top || '데이터 없음',
-            bottom: firstOutfit.bottom || '데이터 없음',
-            mask: firstOutfit.mask || '선택 사항',
-            pack: firstOutfit.pack || '불필요'
+            top: recommendData.top || '데이터 없음',
+            bottom: recommendData.bottom || '데이터 없음',
+            mask: recommendData.mask || '선택 사항',
+            pack: recommendData.pack || '불필요'
         };
 
         const today = new Date();
         today.setMinutes(0, 0, 0);
 
-        // 3. 시간별 예보 데이터 동적 매핑
+        // 시간별 예보 데이터 동적 매핑 (temp 배열 길이만큼 생성)
         hourlyData.value = tempArray.map((tempStr, index) => {
             const date = new Date(today);
             date.setHours(today.getHours() + index);
             
             return {
                 time: date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true }),
-                temp: Math.round(Number(tempStr)),
-                rain: rainArray[index] || '강수없음',
-                sky: skyArray[index] || '맑음',
-                pm25: weatherData.pm25 || 0,
-                pm25Status: getDustStatusText(weatherData.pm25Status)
+                temp: Math.round(Number(tempStr)), // 시간별 기온 (배열에서 추출)
+                rain: rainArray[index] || '강수없음', // 시간별 강수 (배열에서 추출)
+                sky: skyArray[index] || '맑음', // 시간별 하늘 상태 (배열에서 추출)
+                pm25: weatherData.pm25 || 0, // 하루 단위 동일 데이터
+                pm25Status: getDustStatusText(weatherData.pm25Status) // 하루 단위 동일 데이터
             };
         });
 
-        // 4. 시간별 옷차림 데이터 - 백엔드 실제 데이터 사용
-        hourlyOutfitData.value = tempArray.map((_, index) => {
+        // 4. 시간별 옷차림 임시 데이터 (시간별 날씨 상황에 맞춰 구성)
+        const mockOutfits = [
+            { top: currentOutfit.value.top, bottom: currentOutfit.value.bottom, mask: currentOutfit.value.mask, pack: currentOutfit.value.pack }, // 첫 시간은 현재 옷차림
+            { top: "민소매, 반팔 린넨소재", bottom: "반바지, 짧은 치마, 린넨 소재", mask: "마스크 선택", pack: "불필요" },
+            { top: "코트, 가죽재킷, 두꺼운 니트", bottom: "반바지, 면바지", mask: "마스크 선택", pack: "장 우산" },
+            { top: "긴팔 티셔츠, 가디건 후드티, 맨투맨", bottom: "청바지, 두꺼운 긴바지, 기모바지", mask: "kf80 권장", pack: "장 우산, 레인부츠" },
+            { top: "가디건, 야상, 재킷, 니트", bottom: "방한복, 기모 이너", mask: "kf94 필수", pack: "장 우산" },
+            { top: "패딩, 두꺼운 롱코트, 방한복, 기모 이너", bottom: "반바지, 면바지", mask: "kf80 권장", pack: "불필요" }
+        ];
+
+        hourlyOutfitData.value = mockOutfits.slice(0, tempArray.length).map((item, index) => {
             const date = new Date(today);
             date.setHours(today.getHours() + index);
-
-            const outfit = (Array.isArray(recommendList) && recommendList[index])
-                ? recommendList[index]
-                : firstOutfit;
-
-            return {
-                top: outfit.top || '데이터 없음',
-                bottom: outfit.bottom || '데이터 없음',
-                mask: outfit.mask || '선택 사항',
-                pack: outfit.pack || '불필요',
-                time: date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true })
+            return { 
+                ...item, 
+                time: date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true }) 
             };
         });
 
@@ -124,7 +114,7 @@ export const fetchWeatherData = async (regionName) => {
         currentWeather.value = null;
         currentOutfit.value = null;
         hourlyData.value = [];
-        hourlyOutfitData.value = [];
+        hourlyOutfitData.value = []; 
     } finally {
         isLoading.value = false;
     }
