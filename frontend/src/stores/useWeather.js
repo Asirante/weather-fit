@@ -78,7 +78,7 @@ export const fetchWeatherData = async (regionName) => {
         currentOutfit.value = {
             top: firstOutfit.top || '데이터 없음',
             bottom: firstOutfit.bottom || '데이터 없음',
-            mask: firstOutfit.mask || '선택 사항',
+            mask: firstOutfit.mask || '선택',
             pack: firstOutfit.pack || '불필요'
         };
 
