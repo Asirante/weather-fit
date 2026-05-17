@@ -35,14 +35,14 @@ WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
 AIR_POLLUTION_API_URL = os.environ.get("AIR_POLLUTION_API_URL")
 AIR_API_KEY = os.environ.get("AIR_API_KEY")
 
-"""
+
 SIDO_LIST = [
     "서울", "부산", "대구", "인천", "광주", "대전", "울산",
     "경기", "강원", "충북", "충남", "전북", "전남",
     "경북", "경남", "제주", "세종"
-]"""
+]
 
-SIDO_LIST = ["인천"]
+#SIDO_LIST = ["인천"]
 
 
 # --------------------------------------------------
