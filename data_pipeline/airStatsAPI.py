@@ -13,15 +13,15 @@ ENDPOINTS = {
     "sigungu_avg": "/getCtprvnMesureSidoLIst"
 }
 
-"""
+
+# 데이터 받는 지역 전범위로 확대
 SIDO_NAMES = [
     "서울", "부산", "대구", "인천", "광주", "대전", "울산",
     "경기", "강원", "충북", "충남", "전북", "전남",
     "경북", "경남", "제주", "세종"
 ]
-"""
 
-SIDO_NAMES = ["인천"]
+#SIDO_NAMES = ["인천"]
 
 ITEM_CODES = ["SO2", "CO", "O3", "NO2", "PM10"]
 
