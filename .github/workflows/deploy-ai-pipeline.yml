@@ -1,0 +1,52 @@
+name: Deploy AI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ["ai_pipeline/**"]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "실행 모드 선택"
+        required: true
+        type: choice
+        options:
+          - deploy_only # 코드만 올리기 (배치 실행 안함)
+          - deploy_and_run # 코드 올리고 배치 실행 (Bedrock 비용 발생)
+        default: "deploy_only"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
+          aws-region: us-east-1
+
+      # 코드 배포 (push/merge 및 수동 실행 모두 항상 실행)
+      - name: Zip and Update Code
+        run: |
+          cd ai_pipeline
+          zip -r ../deploy.zip .
+          aws lambda update-function-code \
+            --function-name inhatc-team2-4-batchAPI \
+            --zip-file fileb://../deploy.zip
+
+      # 배치 실행 (GitHub Actions 탭에서 deploy_and_run 선택 시만)
+      # ⚠️ Bedrock 호출 비용 발생 — 신중하게 실행할 것
+      - name: Invoke Batch Lambda
+        if: github.event.inputs.mode == 'deploy_and_run'
+        run: |
+          aws lambda invoke \
+            --function-name inhatc-team2-4-batchAPI \
+            --invocation-type Event \
+            --payload '{}' \
+            response.json
+          echo "✅ Batch Lambda triggered (비동기). CloudWatch Logs에서 진행 상황 확인."
