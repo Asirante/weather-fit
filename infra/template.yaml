@@ -34,5 +34,9 @@ Resources:
     Properties:
       TableName: inhatc-team2-1-recommend-cache
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{AttributeName: weather_pattern, AttributeType: S}]
-      KeySchema: [{AttributeName: weather_pattern, KeyType: HASH}]
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
