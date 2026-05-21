@@ -10,6 +10,7 @@ PTY_TYPES   = ["none","rain","snow"]
 
 # 10×5×5×4×3×3×3 = 27,000가지
 
+# 기온에 따른 범주
 def get_temp_zone(temp):
     if temp >= 35: return "35over"
     elif temp >= 30: return "30-34"
@@ -29,6 +30,7 @@ def get_diff_level(diff):
     elif diff <= 12: return "large"
     else: return "xlarge"
 
+# 강수량 레벨
 def get_rain_level(rains):
     for r in rains:
         if r in ["강수없음","0"]: continue
@@ -39,27 +41,32 @@ def get_rain_level(rains):
         else: return "light"
     return "none"
 
+# 미세먼지 등급 
 def get_pm_grade(pm10, pm25):
     if pm25 in ["3","4"] or pm10 == "4": return "very_bad"
     elif pm10 == "3": return "bad"
     elif pm10 == "2": return "normal"
     else: return "good"
 
+# 풍속 레벨
 def get_wind_level(wsd_max):
     if wsd_max >= 3: return "strong"
     elif wsd_max >= 2: return "moderate"
     else: return "calm"
 
+# 자외선 레벨
 def get_uv_level(uv_max):
     if uv_max >= 6: return "high"
     elif uv_max >= 3: return "normal"
     else: return "low"
 
+# 강수 형태
 def get_pty_type(ptys):
     if "3" in ptys: return "snow"
     if any(p in ["1","2","4"] for p in ptys): return "rain"
     return "none"
 
+# 패턴 키 생성
 def build_sk(temp_zone, diff_level, rain_level,
              pm_grade, wind_level, uv_level, pty_type):
     return (f"temp:{temp_zone}|diff:{diff_level}|rain:{rain_level}"
