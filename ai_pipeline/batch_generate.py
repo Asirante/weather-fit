@@ -1,5 +1,8 @@
 # batch_generate.py
-import itertools, json, boto3, time, os
+import itertools, json, boto3, os, time
+from dotenv import load_dotenv
+load_dotenv()
+
 from pattern_domains import (
     TEMP_ZONES, DIFF_LEVELS, RAIN_LEVELS,
     PM_GRADES, WIND_LEVELS, UV_LEVELS, PTY_TYPES,
@@ -10,21 +13,19 @@ from prompts import SYSTEM_PROMPT, make_user_message
 # ============================================================
 # 설정
 # ============================================================
-TABLE   = "inhatc-team2-1-recommend-cache"
-MODEL   = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
-PK_VAL  = "weather_pattern"
-VERSION = "v1"
+TABLE      = "inhatc-team2-1-recommend-cache"
+MODEL      = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+PK_VAL     = "weather_pattern"
+VERSION    = "v1"
+BUCKET     = "inhatc-team2-4-batch-data"
+INPUT_KEY  = "batch/input/patterns.jsonl"
+OUTPUT_URI = f"s3://{BUCKET}/batch/output/"
+ROLE_ARN   = "arn:aws:iam::269578498605:role/SafeRole-inhatc-team2-4"
 
-# 로컬 vs Lambda 자동 감지
-is_local = os.environ.get("IS_LOCAL") == "true"
-
-dynamodb = boto3.resource(
-    "dynamodb",
-    region_name="us-east-1",
-    endpoint_url="http://localhost:8000" if is_local else None
-)
-bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
-table   = dynamodb.Table(TABLE)
+s3       = boto3.client("s3", region_name="us-east-1")
+bedrock  = boto3.client("bedrock", region_name="us-east-1")
+dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+table    = dynamodb.Table(TABLE)
 
 
 # ============================================================
@@ -41,46 +42,76 @@ def all_pattern_sks():
 
 
 def already_exists(sk: str) -> bool:
-    """DynamoDB에 이미 있는지 확인 → 있으면 스킵"""
+    """DynamoDB에 이미 있는지 확인"""
     res = table.get_item(Key={"PK": PK_VAL, "SK": sk})
     return "Item" in res
 
 
-def call_bedrock(sk: str) -> dict:
-    """Bedrock 호출 → JSON 응답 반환"""
-    body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 300,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": make_user_message(sk)}]
-    })
-    res  = bedrock.invoke_model(modelId=MODEL, body=body)
-    text = json.loads(res["body"].read())["content"][0]["text"]
+def make_jsonl() -> str:
+    """
+    패턴을 JSONL 형식으로 변환
+    이미 DynamoDB에 있는 패턴은 제외
+    """
+    lines = []
+    skipped = 0
 
-    # AI가 마크다운 코드블록으로 감쌀 경우 제거
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
+    for sk in all_pattern_sks():
+        if already_exists(sk):
+            skipped += 1
+            continue
 
-    return json.loads(text.strip())
+        line = {
+            "recordId": sk,
+            "modelInput": {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 300,
+                "system": SYSTEM_PROMPT,
+                "messages": [
+                    {"role": "user", "content": make_user_message(sk)}
+                ]
+            }
+        }
+        lines.append(json.dumps(line, ensure_ascii=False))
+
+    print(f"JSONL 생성: {len(lines)}개 (스킵: {skipped}개)")
+    return "\n".join(lines)
 
 
-def save(sk: str, data: dict):
-    """DynamoDB에 결과 저장"""
-    table.put_item(Item={
-        "PK":      PK_VAL,
-        "SK":      sk,
-        "top":     data["top"],
-        "bottom":  data["bottom"],
-        "mask":    data["mask"],
-        "pack":    data["pack"],
-        "acc":     data.get("acc", []),
-        "reason":  data.get("reason", ""),
-        "model":   MODEL,
-        "version": VERSION,
-    })
+def upload_to_s3(jsonl_content: str):
+    """JSONL 파일 S3에 업로드"""
+    s3.put_object(
+        Bucket=BUCKET,
+        Key=INPUT_KEY,
+        Body=jsonl_content.encode("utf-8"),
+        ContentType="application/jsonl"
+    )
+    print(f"S3 업로드 완료: s3://{BUCKET}/{INPUT_KEY}")
+
+
+def create_batch_job() -> str:
+    """Bedrock Batch Job 생성 및 실행"""
+    job_name = f"weather-fit-batch-{int(time.time())}"
+
+    response = bedrock.create_model_invocation_job(
+        jobName=job_name,
+        modelId=MODEL,
+        inputDataConfig={
+            "s3InputDataConfig": {
+                "s3Uri": f"s3://{BUCKET}/{INPUT_KEY}",
+                "s3InputFormat": "JSONL"
+            }
+        },
+        outputDataConfig={
+            "s3OutputDataConfig": {
+                "s3Uri": OUTPUT_URI
+            }
+        },
+        roleArn=ROLE_ARN
+    )
+
+    job_arn = response["jobArn"]
+    print(f"Batch Job 생성 완료: {job_arn}")
+    return job_arn
 
 
 # ============================================================
@@ -89,82 +120,28 @@ def save(sk: str, data: dict):
 
 def lambda_handler(event, context):
     """
-    AWS Lambda 진입점
-
-    event 파라미터:
-        limit (int): 테스트 시 처리할 패턴 수 제한
-                     없으면 전체 처리
-    예시:
-        {"limit": 10}  → 10개만 처리 (테스트용)
-        {}             → 전체 처리 (실전용)
+    1단계: JSONL 생성 → S3 업로드 → Batch Job 실행
+    Batch 완료 후 결과 저장은 batch_save.py가 처리
     """
-    limit = event.get("limit", None)
-    total = skipped = saved = errors = 0
-    consecutive_errors = 0
+    # 1. JSONL 생성
+    jsonl_content = make_jsonl()
 
-    for sk in all_pattern_sks():
+    if not jsonl_content.strip():
+        print("처리할 패턴 없음 (모두 이미 존재)")
+        return {"statusCode": 200, "body": "처리할 패턴 없음"}
 
-        # limit 있으면 그 개수만 처리
-        if limit and total >= limit:
-            print(f"limit {limit}개 도달 → 종료")
-            break
+    # 2. S3 업로드
+    upload_to_s3(jsonl_content)
 
-        total += 1
+    # 3. Batch Job 실행
+    job_arn = create_batch_job()
 
-        # 100개마다 진행률 출력
-        if total % 100 == 0:
-            print(f"[{total}] 저장:{saved} 스킵:{skipped} 오류:{errors}")
+    return {
+        "statusCode": 200,
+        "body": f"Batch Job 시작됨: {job_arn}"
+    }
 
-        # 이미 있으면 스킵
-        if already_exists(sk):
-            skipped += 1
-            continue
-
-        try:
-            data = call_bedrock(sk)
-            save(sk, data)
-            saved += 1
-            consecutive_errors = 0
-            time.sleep(0.1)  # API 호출 제한 방지
-
-        except Exception as e:
-            print(f"ERROR {sk}: {e}")
-            errors += 1
-            consecutive_errors += 1
-
-            # 연속 에러 10개 넘으면 중단
-            if consecutive_errors >= 10:
-                print("연속 에러 10개 초과 → 중단!")
-                break
-
-    result = f"완료: 전체{total} 스킵{skipped} 저장{saved} 오류{errors}"
-    print(result)
-    return {"statusCode": 200, "body": result}
-
-
-# ============================================================
-# 로컬 Mock 테스트용
-# ============================================================
 
 if __name__ == "__main__":
-    print("=== Mock 테스트 시작 ===\n")
-
-    # call_bedrock을 Mock으로 교체
-    def mock_bedrock(sk: str) -> dict:
-        return {
-            "top": ["반팔"],
-            "bottom": ["반바지"],
-            "mask": "마스크 선택",
-            "pack": "불필요",
-            "acc": ["선크림"],
-            "reason": "더운 날씨, 시원하게 입어요"
-        }
-
-    # 전역 함수 교체
-    import sys
-    current_module = sys.modules[__name__]
-    current_module.call_bedrock = mock_bedrock
-
-    # 5개만 테스트
-    result = lambda_handler({"limit": 5}, None)
+    result = lambda_handler({}, None)
     print(f"\n결과: {result}")
