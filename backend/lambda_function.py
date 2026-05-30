@@ -137,7 +137,7 @@ def lambda_handler(event, context):
         gungu = region_n[1]
         raw_station = f"{region_n[0]} {region_n[1]}"
 
-        station_key = gu_to_station.get(gungu)
+        station_key = gu_to_station.get(raw_station)
 
         if not station_key:
             return {
