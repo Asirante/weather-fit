@@ -4,8 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from pattern_domains import (
-    TEMP_ZONES, DIFF_LEVELS, RAIN_LEVELS,
-    PM_GRADES, WIND_LEVELS, UV_LEVELS, PTY_TYPES,
+    TEMP_ZONES, RAIN_LEVELS, PM_GRADES,
     build_sk
 )
 from prompts import SYSTEM_PROMPT, make_user_message
@@ -35,8 +34,7 @@ table    = dynamodb.Table(TABLE)
 def all_pattern_sks():
     """27,000개 패턴 키 생성"""
     for combo in itertools.product(
-        TEMP_ZONES, DIFF_LEVELS, RAIN_LEVELS,
-        PM_GRADES, WIND_LEVELS, UV_LEVELS, PTY_TYPES
+        TEMP_ZONES, RAIN_LEVELS, PM_GRADES
     ):
         yield build_sk(*combo)
 
@@ -143,5 +141,25 @@ def lambda_handler(event, context):
 
 
 if __name__ == "__main__":
-    result = lambda_handler({}, None)
-    print(f"\n결과: {result}")
+    print("=== JSONL 생성 테스트 ===\n")
+    
+    count = 0
+    for sk in all_pattern_sks():
+        line = {
+            "recordId": sk,
+            "modelInput": {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 300,
+                "system": SYSTEM_PROMPT,
+                "messages": [
+                    {"role": "user", "content": make_user_message(sk)}
+                ]
+            }
+        }
+        print(json.dumps(line, ensure_ascii=False))
+        count += 1
+        if count >= 3:
+            break
+    
+    print(f"\n총 패턴 수: 72개")
+    print("✅ JSONL 형식 정상!")

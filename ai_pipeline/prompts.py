@@ -30,9 +30,5 @@ def make_user_message(sk: str) -> str:
     parts = dict(item.split(":") for item in sk.split("|"))
     return f"""기상 패턴:
 - 기온: {parts['temp']}
-- 일교차: {parts['diff']}
 - 강수량: {parts['rain']}
-- 미세먼지: {parts['pm']}
-- 풍속: {parts['wind']}
-- 자외선: {parts['uv']}
-- 강수형태: {parts['pty']}"""
+- 미세먼지: {parts['pm']}"""
