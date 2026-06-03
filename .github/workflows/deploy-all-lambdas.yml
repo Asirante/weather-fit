@@ -1,0 +1,119 @@
+name: Deploy All Lambda Functions
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - "ai_pipeline/**"
+      - "data_pipeline/**"
+      - "real_time/**"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "배포 대상 선택 (all = 전체 배포)"
+        required: true
+        type: choice
+        options:
+          - all
+          - recommendAPI
+          - batchAPI
+          - dataAPI
+          - weather-data-batches
+          - weather-data-merge
+          - forecast-data-batches
+          - forecast-data-worker
+          - forecast-data-merge
+          - real-time-dataAPI
+          - real-time-weather-data
+          - real-time-weather-data-worker
+        default: "all"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Build deployment matrix
+        id: set-matrix
+        run: |
+          declare -A LAMBDA_MAP
+          LAMBDA_MAP[backend]="inhatc-team2-1-recommendAPI:recommendAPI"
+          LAMBDA_MAP[ai_pipeline]="inhatc-team2-4-batchAPI:batchAPI"
+          LAMBDA_MAP[data_pipeline]="inhatc-team2-5-dataAPI:dataAPI"
+          LAMBDA_MAP[data_pipeline/weather_batches]="inhatc-team2-5-weather-data-batches:weather-data-batches"
+          LAMBDA_MAP[data_pipeline/weather_merge]="inhatc-team2-5-weather-data-merge:weather-data-merge"
+          LAMBDA_MAP[data_pipeline/forecast_batches]="inhatc-team2-5-forecast-data-batches:forecast-data-batches"
+          LAMBDA_MAP[data_pipeline/forecast_worker]="inhatc-team2-5-forecast-data-worker:forecast-data-worker"
+          LAMBDA_MAP[data_pipeline/forecast_merge]="inhatc-team2-5-forecast-data-merge:forecast-data-merge"
+          LAMBDA_MAP[real_time]="inhatc-team2-5-real-time-dataAPI:real-time-dataAPI"
+          LAMBDA_MAP[real_time/weather_data]="inhatc-team2-5-real-time-weather-data:real-time-weather-data"
+          LAMBDA_MAP[real_time/weather_worker]="inhatc-team2-5-real-time-weather-data-worker:real-time-weather-data-worker"
+
+          MATRIX="[]"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGET="${{ github.event.inputs.target }}"
+            for dir in "${!LAMBDA_MAP[@]}"; do
+              FUNC_NAME="${LAMBDA_MAP[$dir]%%:*}"
+              SHORT_NAME="${LAMBDA_MAP[$dir]##*:}"
+              if [[ "$TARGET" == "all" || "$TARGET" == "$SHORT_NAME" ]]; then
+                MATRIX=$(echo "$MATRIX" | jq -c ". + [{\"dir\": \"$dir\", \"function\": \"$FUNC_NAME\", \"name\": \"$SHORT_NAME\"}]")
+              fi
+            done
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+            for dir in "${!LAMBDA_MAP[@]}"; do
+              FUNC_NAME="${LAMBDA_MAP[$dir]%%:*}"
+              SHORT_NAME="${LAMBDA_MAP[$dir]##*:}"
+              if echo "$CHANGED_FILES" | grep -q "^${dir}/"; then
+                # For parent dirs with subdirs, only match direct files
+                if [[ "$dir" == "data_pipeline" || "$dir" == "real_time" ]]; then
+                  # Check if any direct files (not in subdirs) changed
+                  if echo "$CHANGED_FILES" | grep -q "^${dir}/[^/]*$"; then
+                    MATRIX=$(echo "$MATRIX" | jq -c ". + [{\"dir\": \"$dir\", \"function\": \"$FUNC_NAME\", \"name\": \"$SHORT_NAME\"}]")
+                  fi
+                else
+                  MATRIX=$(echo "$MATRIX" | jq -c ". + [{\"dir\": \"$dir\", \"function\": \"$FUNC_NAME\", \"name\": \"$SHORT_NAME\"}]")
+                fi
+              fi
+            done
+          fi
+
+          echo "matrix={\"include\":$MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "Deployment targets: $MATRIX"
+
+  deploy:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.matrix != '{"include":[]}' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+      fail-fast: false
+    name: Deploy ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
+          aws-region: us-east-1
+
+      - name: Zip and Deploy ${{ matrix.name }}
+        run: |
+          cd "${{ matrix.dir }}"
+          # Zip only files in current directory (exclude subdirectories)
+          find . -maxdepth 1 -type f | zip ../deploy-${{ matrix.name }}.zip -@
+          aws lambda update-function-code \
+            --function-name "${{ matrix.function }}" \
+            --zip-file "fileb://../deploy-${{ matrix.name }}.zip"
+          echo "✅ ${{ matrix.name }} (${{ matrix.function }}) 배포 완료"

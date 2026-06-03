@@ -29,7 +29,7 @@ jobs:
       - name: Zip and Update Code
         run: |
           cd data_pipeline
-          zip -r ../deploy.zip .
+          find . -maxdepth 1 -type f | zip ../deploy.zip -@
           aws lambda update-function-code \
             --function-name inhatc-team2-5-dataAPI \
             --zip-file fileb://../deploy.zip
