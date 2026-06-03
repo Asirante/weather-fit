@@ -38,15 +38,19 @@ def lambda_handler(event, context):
 
         if key not in unique:
             unique[key] = {
-                "region_code": row.get("행정구역코드", ""),
-                "region_name": " ".join(filter(None, [
-                    row.get("1단계"),
-                    row.get("2단계"),
-                    row.get("3단계")
-                ])),
                 "nx": int(nx),
-                "ny": int(ny)
+                "ny": int(ny),
+                "regions": []
             }
+
+        unique[key]["regions"].append({
+            "region_code": row.get("행정구역코드", ""),
+            "region_name": " ".join(filter(None, [
+                row.get("1단계"),
+                row.get("2단계"),
+                row.get("3단계")
+            ]))
+        })
 
     locations = list(unique.values())
 
