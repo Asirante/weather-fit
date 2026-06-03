@@ -1,15 +1,12 @@
 import json
 import boto3
 import os
-import csv
-from io import StringIO
 from urllib.parse import parse_qs, unquote
 from decimal import Decimal
+from boto3.dynamodb.conditions import Key
 
-# 매핑 파일에서 딕셔너리 가져오기 (코드 중복 제거)
 from mapping import gu_to_station
 
-# 1. 환경 변수 감지
 IS_LOCAL = os.environ.get("AWS_SAM_LOCAL") == "true"
 
 if IS_LOCAL:
@@ -23,8 +20,6 @@ if IS_LOCAL:
 else:
     dynamodb = boto3.resource("dynamodb")
 
-s3 = boto3.client("s3")
-
 TABLE_NAME = os.environ.get(
     "TABLE_NAME", "inhatc-team2-1-recommend-cache"
 )
@@ -34,17 +29,14 @@ AIR_TABLE_NAME = os.environ.get(
 WEATHER_TABLE_NAME = os.environ.get(
     "WEATHER_TABLE_NAME", "inhatc-team2-5-weather-cache"
 )
+FORECAST_TABLE_NAME = os.environ.get(
+    "FORECAST_TABLE_NAME", "inhatc-team2-5-forecast-cache"
+)
 
 recommend_table = dynamodb.Table(TABLE_NAME)
 air_table = dynamodb.Table(AIR_TABLE_NAME)
 weather_table = dynamodb.Table(WEATHER_TABLE_NAME)
-
-BUCKET_NAME = "inhatc-team2-5-raw-data"
-PREFIX = "raw/forecast/ultra_short_forecast/"
-
-# ★ 성능 개선: S3에서 가져온 데이터를 람다 컨테이너 메모리에 캐싱
-_CSV_CACHE = None
-_LATEST_FILE_KEY = None
+forecast_table = dynamodb.Table(FORECAST_TABLE_NAME)
 
 
 def decimal_to_float(obj):
@@ -53,257 +45,361 @@ def decimal_to_float(obj):
     raise TypeError
 
 
-def load_csv_rows():
-    global _CSV_CACHE, _LATEST_FILE_KEY
+def safe_float(value, default=0.0):
+    if value is None:
+        return default
+    s = str(value).strip().lstrip("'")
+    if not s or s == "-":
+        return default
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
 
-    # S3에서 최신 파일 목록 조회
-    response = s3.list_objects_v2(
-        Bucket=BUCKET_NAME, Prefix=PREFIX
+
+# ──────────────────────────────────────────────
+# 패턴 키 빌드 함수
+# ──────────────────────────────────────────────
+
+def get_temp_zone(temp):
+    if temp >= 35:   return "35over"
+    elif temp >= 30: return "30-34"
+    elif temp >= 25: return "25-29"
+    elif temp >= 20: return "20-24"
+    elif temp >= 15: return "15-19"
+    elif temp >= 10: return "10-14"
+    elif temp >= 5:  return "5-9"
+    elif temp >= 0:  return "0-4"
+    elif temp >= -10: return "-10--1"
+    else: return "under-11"
+
+
+def get_diff_level(diff):
+    if diff <= 2:    return "none"
+    elif diff <= 5:  return "small"
+    elif diff <= 8:  return "normal"
+    elif diff <= 12: return "large"
+    else: return "xlarge"
+
+
+def get_rain_level_from_value(rn1):
+    if rn1 <= 0:     return "none"
+    elif rn1 < 1:    return "drizzle"
+    elif rn1 < 3:    return "light"
+    elif rn1 < 15:   return "moderate"
+    else: return "heavy"
+
+
+def get_rain_level_from_str(rn1_str):
+    s = str(rn1_str).strip()
+    if s in ("강수없음", "0", ""):
+        return "none"
+    if "미만" in s:
+        return "drizzle"
+    try:
+        val = float(s.split("~")[0].replace("mm", "").strip())
+        if val >= 15:  return "heavy"
+        elif val >= 3: return "moderate"
+        elif val >= 1: return "light"
+        else:          return "drizzle"
+    except (ValueError, IndexError):
+        return "none"
+
+
+RAIN_RANK = {"none": 0, "drizzle": 1, "light": 2, "moderate": 3, "heavy": 4}
+
+
+def get_pm_grade(pm10_grade, pm25_grade):
+    if pm25_grade in ("3", "4") or pm10_grade == "4":
+        return "very_bad"
+    elif pm10_grade == "3":
+        return "bad"
+    elif pm10_grade == "2":
+        return "normal"
+    else:
+        return "good"
+
+
+def get_wind_level(wsd):
+    if wsd >= 3:     return "strong"
+    elif wsd >= 2:   return "moderate"
+    else: return "calm"
+
+
+def get_uv_level(uv_max):
+    if uv_max >= 6:  return "high"
+    elif uv_max >= 3: return "normal"
+    else: return "low"
+
+
+def get_pty_type(pty_codes):
+    codes = [str(c).strip() for c in pty_codes]
+    if "3" in codes:
+        return "snow"
+    if any(c in ("1", "2", "4") for c in codes):
+        return "rain"
+    return "none"
+
+
+def build_sk(temp_zone, diff_level, rain_level,
+             pm_grade, wind_level, uv_level, pty_type):
+    return (
+        f"temp:{temp_zone}|diff:{diff_level}|rain:{rain_level}"
+        f"|pm:{pm_grade}|wind:{wind_level}|uv:{uv_level}|pty:{pty_type}"
     )
-    if "Contents" not in response:
-        return []
 
-    latest_file = max(
-        response["Contents"], key=lambda x: x["Key"]
+
+# ──────────────────────────────────────────────
+# DynamoDB 조회
+# ──────────────────────────────────────────────
+
+def query_weather(region_code):
+    response = weather_table.query(
+        KeyConditionExpression=Key("region_code").eq(region_code)
     )
-    latest_key = latest_file["Key"]
+    weather_map = {}
+    for item in response.get("Items", []):
+        cat = item.get("category", "")
+        if cat:
+            weather_map[cat] = item
+    return weather_map
 
-    # ★ 성능 개선: 이전에 캐싱된 파일과 키가 같다면 S3에서 다운로드하지 않고 캐시 반환
-    if (
-        _CSV_CACHE is not None
-        and _LATEST_FILE_KEY == latest_key
-    ):
-        print("Using cached CSV data")
-        return _CSV_CACHE
 
-    print(f"Loading new file from S3: {latest_key}")
-    file_response = s3.get_object(
-        Bucket=BUCKET_NAME, Key=latest_key
+def query_forecast(region_code):
+    response = forecast_table.query(
+        KeyConditionExpression=Key("region_code").eq(region_code)
     )
-    csv_content = (
-        file_response["Body"].read().decode("utf-8-sig")
+    return response.get("Items", [])
+
+
+def parse_forecast_series(forecast_items):
+    series = {}
+    for item in forecast_items:
+        cat = item.get("category", "")
+        fcst_time = item.get("fcstDate", "") + item.get("fcstTime", "")
+        if cat not in series:
+            series[cat] = []
+        series[cat].append({
+            "time": fcst_time,
+            "value": item.get("fcstValue", ""),
+        })
+
+    for cat in series:
+        series[cat].sort(key=lambda x: x["time"])
+
+    return series
+
+
+def build_pattern(weather_map, forecast_items, air_data):
+    series = parse_forecast_series(forecast_items)
+
+    t1h_values = [safe_float(v["value"]) for v in series.get("T1H", [])]
+    if t1h_values:
+        temp_min = min(t1h_values)
+        temp_zone = get_temp_zone(temp_min)
+        diff = max(t1h_values) - temp_min
+        diff_level = get_diff_level(diff)
+    else:
+        temp = safe_float(weather_map.get("T1H", {}).get("obsrValue"))
+        temp_zone = get_temp_zone(temp)
+        diff_level = "normal"
+
+    rn1_values = series.get("RN1", [])
+    if rn1_values:
+        max_rain = "none"
+        for v in rn1_values:
+            level = get_rain_level_from_str(v["value"])
+            if RAIN_RANK.get(level, 0) > RAIN_RANK.get(max_rain, 0):
+                max_rain = level
+        rain_level = max_rain
+    else:
+        rn1 = safe_float(weather_map.get("RN1", {}).get("obsrValue"))
+        rain_level = get_rain_level_from_value(rn1)
+
+    pm10_grade = str(air_data.get("pm10Grade", ""))
+    pm25_grade = str(air_data.get("pm25Grade", ""))
+    pm_grade = get_pm_grade(pm10_grade, pm25_grade)
+
+    wsd_values = [safe_float(v["value"]) for v in series.get("WSD", [])]
+    if wsd_values:
+        wind_level = get_wind_level(max(wsd_values))
+    else:
+        wsd = safe_float(weather_map.get("WSD", {}).get("obsrValue"))
+        wind_level = get_wind_level(wsd)
+
+    uv_item = weather_map.get("UV_INDEX", {})
+    uv_max = max(
+        safe_float(uv_item.get("h0")),
+        safe_float(uv_item.get("h3")),
+        safe_float(uv_item.get("h6")),
     )
-    csv_file = StringIO(csv_content)
+    uv_level = get_uv_level(uv_max)
 
-    # 캐시 업데이트
-    _CSV_CACHE = list(csv.DictReader(csv_file))
-    _LATEST_FILE_KEY = latest_key
+    pty_values = series.get("PTY", [])
+    if pty_values:
+        pty_codes = [v["value"] for v in pty_values]
+        pty_type = get_pty_type(pty_codes)
+    else:
+        pty_code = str(weather_map.get("PTY", {}).get("obsrValue", "0"))
+        pty_type = get_pty_type([pty_code])
 
-    return _CSV_CACHE
-
-
-def get_temperature_data(rows, region, ch):
-    result = []
-    for row in rows:
-        if (
-            row["region_name"] == region
-            and row["category"] == ch
-        ):
-            result.append(row["fcstValue"])
-
-    # if not result:
-    #     new_region = region.split()[0]
-    #     for row in rows:
-    #         if (
-    #             row["region_name"] == new_region
-    #             and row["category"] == ch
-    #         ):
-    #             result.append(row["fcstValue"])
-    return result
-
-def resolve_station(rows, raw_station):
-
-    for row in rows:
-        if row["region_name"] == raw_station:
-            return raw_station
-
-    prefix = raw_station.split()[0] + " "
-    for row in rows:
-        name = row["region_name"]
-        if name.startswith(prefix):
-            return name
-
-    return raw_station
+    return build_sk(
+        temp_zone, diff_level, rain_level,
+        pm_grade, wind_level, uv_level, pty_type
+    )
 
 
 def lambda_handler(event, context):
     try:
         raw_qs = event.get("rawQueryString", "")
         params = parse_qs(raw_qs)
-
-        region = params.get("region", [""])[0]
-        region = unquote(region)
         path = event.get("rawPath", "/")
 
-        region_n = region.split()
+        region_code = params.get("region_code", [""])[0]
+        region = unquote(params.get("region", [""])[0])
 
-        if len(region_n) < 2:
+        if not region_code and not region:
             return {
                 "statusCode": 400,
                 "body": json.dumps(
-                    {
-                        "error": "region 파라미터 형식 오류 (예: 인천광역시 중구)"
-                    },
+                    {"error": "region_code 또는 region 파라미터가 필요합니다."},
                     ensure_ascii=False,
                 ),
             }
 
-        gungu = region_n[1]
-        raw_station = f"{region_n[0]} {region_n[1]}"
+        # ── 1. 기상 데이터 조회 (weather-cache) ──
+        weather_map = {}
+        region_name = ""
 
-        station_key = gu_to_station.get(raw_station)
+        if region_code:
+            weather_map = query_weather(region_code)
+            if weather_map:
+                for item in weather_map.values():
+                    if item.get("category") != "UV_INDEX":
+                        region_name = item.get("region_name", "")
+                        break
 
-        if not station_key:
-            return {
-                "statusCode": 400,
-                "body": json.dumps(
-                    {"error": "지원하지 않는 지역입니다."},
-                    ensure_ascii=False,
-                ),
-            }
+        if not region_name and region:
+            region_name = region
 
-        response = air_table.get_item(
-            Key={"stationKey": station_key}
-        )
-        air_data = response.get("Item", {})
-
-        # CSV 데이터 로드 (캐시 적용됨)
-        rows = load_csv_rows()
-
-        effective_station = resolve_station(rows, raw_station)
-
-        weather_data = get_temperature_data(
-            rows, effective_station, "T1H"
-        )
-        rain_data = get_temperature_data(
-            rows, effective_station, "RN1"
-        )
-        sky_data = get_temperature_data(
-            rows, effective_station, "SKY"
-        )
-        pty_data = get_temperature_data(
-            rows, effective_station, "PTY"
-        )
-
-        # ★ 500 에러 방지: 데이터가 하나라도 없으면 에러 처리
-        if not weather_data or not rain_data:
+        if not weather_map:
             return {
                 "statusCode": 404,
                 "body": json.dumps(
-                    {
-                        "error": "해당 지역의 기상 데이터를 S3에서 찾을 수 없습니다."
-                    },
+                    {"error": "해당 지역의 기상 데이터를 찾을 수 없습니다."},
                     ensure_ascii=False,
                 ),
             }
 
-        if path == "/recommend":
-            pm10 = str(air_data.get("pm10Grade", ""))
-            pm25 = str(air_data.get("pm25Grade", ""))
+        # ── 2. 대기질 데이터 조회 (air-cache) ──
+        station_key = gu_to_station.get(region_name)
+        air_data = {}
 
-            recommend_list = []
-            # 현재부터 최대 6개(5시간 후)까지의 시간대 데이터 계산
-            loop_count = min(
-                6, len(weather_data), len(rain_data)
+        if station_key:
+            air_response = air_table.get_item(
+                Key={"stationKey": station_key}
             )
+            air_data = air_response.get("Item", {})
 
-            for i in range(loop_count):
-                temp = int(weather_data[i])
-                rain = rain_data[i]
+        # ── 3. 경로별 응답 ──
+        if path == "/recommend":
+            forecast_items = query_forecast(region_code)
 
-                top = "긴팔 티셔츠, 가디건 후드티, 맨투맨"
-                bottom = "청바지"
-                mask = "마스크 선택"
-                pack = "불필요"
+            sk = build_pattern(weather_map, forecast_items, air_data)
 
-                # 온도에 따른 옷차림 로직
-                if temp >= 28:
-                    top, bottom = (
-                        "민소매, 반팔 린넨소재",
-                        "반바지, 짧은 치마, 린넨 소재",
-                    )
-                elif temp >= 23:
-                    top, bottom = (
-                        "반팔, 얇은 셔츠",
-                        "반바지, 면바지",
-                    )
-                elif temp >= 17:
-                    top, bottom = (
-                        "긴팔 티셔츠, 가디건 후드티, 맨투맨",
-                        "청바지",
-                    )
-                elif temp >= 12:
-                    top, bottom = (
-                        "가디건, 야상, 재킷, 니트",
-                        "두꺼운 긴바지",
-                    )
-                elif temp >= 5:
-                    top, bottom = (
-                        "코트, 가죽재킷, 두꺼운 니트",
-                        "기모바지",
-                    )
-                else:
-                    top, bottom = (
-                        "패딩, 두꺼운 롱코트, 방한복, 기모 이너",
-                        "방한복, 기모 이너",
-                    )
+            rec_response = recommend_table.get_item(
+                Key={"PK": "weather_pattern", "SK": sk}
+            )
+            rec_data = rec_response.get("Item")
 
-                # 미세먼지에 따른 마스크 로직
-                if pm10 == "4" or pm25 in ["3", "4"]:
-                    mask = "kf94 필수"
-                elif pm10 == "3" or pm25 == "3":
-                    mask = "kf80 권장"
+            if not rec_data:
+                return {
+                    "statusCode": 404,
+                    "body": json.dumps(
+                        {
+                            "error": "해당 패턴의 추천 데이터가 없습니다.",
+                            "pattern": sk,
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
 
-                # 강수에 따른 우산 로직
-                if rain in ["강수없음", "0"]:
-                    pack = "불필요"
-                elif rain == "1mm 미만":
-                    pack = "접이식 우산"
-                else:
-                    pack = "우산 필수"
-
-                recommend_list.append(
-                    {
-                        "top": top,
-                        "bottom": bottom,
-                        "mask": mask,
-                        "pack": pack,
-                    }
-                )
+            result = {
+                "pattern": sk,
+                "top": rec_data.get("top", []),
+                "bottom": rec_data.get("bottom", []),
+                "mask": rec_data.get("mask", ""),
+                "pack": rec_data.get("pack", ""),
+                "acc": rec_data.get("acc", []),
+                "reason": rec_data.get("reason", ""),
+            }
 
             return {
                 "statusCode": 200,
                 "body": json.dumps(
-                    recommend_list, ensure_ascii=False
+                    result,
+                    ensure_ascii=False,
+                    default=decimal_to_float,
                 ),
             }
 
         elif path == "/weather":
+            forecast_items = query_forecast(region_code)
+            series = parse_forecast_series(forecast_items)
+
+            temp_list = [safe_float(v["value"]) for v in series.get("T1H", [])]
+            rain_list = [v["value"] for v in series.get("RN1", [])]
+            pty_list = [v["value"] for v in series.get("PTY", [])]
+            sky_list = [v["value"] for v in series.get("SKY", [])]
+
             sky_result = []
+            for i in range(len(sky_list)):
+                pty = str(pty_list[i]).strip() if i < len(pty_list) else "0"
+                sky = str(sky_list[i]).strip()
 
-            for sky, pty in zip(sky_data, pty_data):
-                sky = sky.strip()
-                pty = pty.strip()
-
-                if pty in ["1", "2", "4"]:
+                if pty in ("1", "2", "4"):
                     sky_result.append("비")
                 elif pty == "3":
                     sky_result.append("눈")
+                elif sky in ("1", "2"):
+                    sky_result.append("맑음")
                 else:
-                    if sky in ["0", "1"]:
-                        sky_result.append("맑음")
-                    else:
-                        sky_result.append("흐림")
+                    sky_result.append("흐림")
+
+            current_temp = safe_float(
+                weather_map.get("T1H", {}).get("obsrValue")
+            )
+
+            uv_item = weather_map.get("UV_INDEX", {})
+            uv_max = max(
+                safe_float(uv_item.get("h0")),
+                safe_float(uv_item.get("h3")),
+                safe_float(uv_item.get("h6")),
+            )
+
+            base_date = ""
+            base_time = ""
+            for item in weather_map.values():
+                if item.get("category") != "UV_INDEX" and item.get("baseDate"):
+                    base_date = item.get("baseDate", "")
+                    base_time = item.get("baseTime", "")
+                    break
 
             filtered_data = {
-                "temp": weather_data,
+                "region_code": region_code,
+                "region_name": region_name,
+                "baseDate": base_date,
+                "baseTime": base_time,
+                "temp": current_temp,
+                "tempForecast": temp_list,
+                "rain": rain_list,
+                "sky": sky_result,
+                "uv": uv_max,
                 "o3": air_data.get("o3Value"),
                 "pm10": air_data.get("pm10Value"),
-                "pm10Status": air_data.get("pm10Grade"),
+                "pm10Grade": air_data.get("pm10Grade"),
                 "pm25": air_data.get("pm25Value"),
-                "pm25Status": air_data.get("pm25Grade"),
-                "rain": rain_data,
-                "sky": sky_result,
+                "pm25Grade": air_data.get("pm25Grade"),
             }
 
             return {
@@ -325,7 +421,6 @@ def lambda_handler(event, context):
             }
 
     except Exception as e:
-        # 예상치 못한 에러가 났을 때 Lambda가 죽어버리지 않도록 방어
         print(f"Error occurred: {str(e)}")
         return {
             "statusCode": 500,
