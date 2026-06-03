@@ -101,15 +101,29 @@ def get_temperature_data(rows, region, ch):
         ):
             result.append(row["fcstValue"])
 
-    if not result:
-        new_region = region.split()[0]
-        for row in rows:
-            if (
-                row["region_name"] == new_region
-                and row["category"] == ch
-            ):
-                result.append(row["fcstValue"])
+    # if not result:
+    #     new_region = region.split()[0]
+    #     for row in rows:
+    #         if (
+    #             row["region_name"] == new_region
+    #             and row["category"] == ch
+    #         ):
+    #             result.append(row["fcstValue"])
     return result
+
+def resolve_station(rows, raw_station):
+
+    for row in rows:
+        if row["region_name"] == raw_station:
+            return raw_station
+
+    prefix = raw_station.split()[0] + " "
+    for row in rows:
+        name = row["region_name"]
+        if name.startswith(prefix):
+            return name
+
+    return raw_station
 
 
 def lambda_handler(event, context):
@@ -137,7 +151,7 @@ def lambda_handler(event, context):
         gungu = region_n[1]
         raw_station = f"{region_n[0]} {region_n[1]}"
 
-        station_key = gu_to_station.get(gungu)
+        station_key = gu_to_station.get(raw_station)
 
         if not station_key:
             return {
@@ -156,17 +170,19 @@ def lambda_handler(event, context):
         # CSV 데이터 로드 (캐시 적용됨)
         rows = load_csv_rows()
 
+        effective_station = resolve_station(rows, raw_station)
+
         weather_data = get_temperature_data(
-            rows, raw_station, "T1H"
+            rows, effective_station, "T1H"
         )
         rain_data = get_temperature_data(
-            rows, raw_station, "RN1"
+            rows, effective_station, "RN1"
         )
         sky_data = get_temperature_data(
-            rows, raw_station, "SKY"
+            rows, effective_station, "SKY"
         )
         pty_data = get_temperature_data(
-            rows, raw_station, "PTY"
+            rows, effective_station, "PTY"
         )
 
         # ★ 500 에러 방지: 데이터가 하나라도 없으면 에러 처리
