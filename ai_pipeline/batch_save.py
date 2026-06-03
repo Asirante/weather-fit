@@ -1,13 +1,13 @@
 # batch_save.py
 import json, boto3, os
-from dotenv import load_dotenv
-load_dotenv()
+# from dotenv import load_dotenv
+# load_dotenv()
 
 # ============================================================
 # 설정
 # ============================================================
 TABLE         = "inhatc-team2-1-recommend-cache"
-MODEL         = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+MODEL         = "us.anthropic.claude-4-5-haiku-20241022-v1:0"
 PK_VAL        = "weather_pattern"
 VERSION       = "v1"
 BUCKET        = "inhatc-team2-4-batch-data"

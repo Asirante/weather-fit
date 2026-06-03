@@ -1,7 +1,7 @@
 # batch_generate.py
 import itertools, json, boto3, os, time
-from dotenv import load_dotenv
-load_dotenv()
+# from dotenv import load_dotenv
+# load_dotenv()
 
 from pattern_domains import (
     TEMP_ZONES, DIFF_LEVELS, RAIN_LEVELS,
