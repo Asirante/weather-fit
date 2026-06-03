@@ -2,6 +2,8 @@ import json
 import os
 import logging
 import time
+import csv
+import io
 from datetime import datetime, timedelta
 from decimal import Decimal
 from urllib.request import Request, urlopen
@@ -15,6 +17,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource("dynamodb")
+s3_client = boto3.client("s3")
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -258,6 +261,111 @@ def save_nowcast_to_dynamodb(api_data, table_name):
     return saved_count
 
 
+def read_latest_uv_index_csv(bucket, prefix):
+    response = s3_client.list_objects_v2(
+        Bucket=bucket,
+        Prefix=prefix
+    )
+
+    objects = response.get("Contents", [])
+
+    csv_files = [
+        obj for obj in objects
+        if obj["Key"].endswith(".csv")
+    ]
+
+    if not csv_files:
+        logger.warning(f"No UV index csv found under prefix={prefix}")
+        return []
+
+    latest = max(csv_files, key=lambda x: x["LastModified"])
+    key = latest["Key"]
+
+    logger.info(f"Reading latest UV index csv: s3://{bucket}/{key}")
+
+    obj = s3_client.get_object(
+        Bucket=bucket,
+        Key=key
+    )
+
+    text = obj["Body"].read().decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+
+    return list(reader)
+
+
+
+def build_uv_index_items(rows):
+    items = []
+    updated_at = iso_now_kst()
+
+    keep_columns = [
+        "h0", "h3", "h6"
+    ]
+
+    for row in rows:
+        region_code = str(row.get("areaNo", "")).strip()
+        region_name = row.get("areaNm", "")
+
+        if not region_code:
+            continue
+
+        item = {
+            "region_code": region_code,
+            "region_name": region_name,
+            "category": "UV_INDEX",
+            "code": row.get("code", ""),
+            "date": str(row.get("date", "")).strip(),
+            "updatedAt": updated_at,
+        }
+
+        for col in keep_columns:
+            item[col] = to_decimal_if_number(row.get(col, ""))
+
+        items.append(item)
+
+    return items
+
+
+
+def save_uv_index_to_dynamodb(table_name, bucket, prefix):
+    table = dynamodb.Table(table_name)
+
+    rows = read_latest_uv_index_csv(bucket, prefix)
+    items = build_uv_index_items(rows)
+
+    if not items:
+        logger.warning("No UV index items parsed")
+        return 0
+
+    saved_count = 0
+    skipped_count = 0
+
+    with table.batch_writer() as batch:
+        for item in items:
+            try:
+                if (
+                    not item.get("region_code")
+                    or not item.get("category")
+                ):
+                    skipped_count += 1
+                    continue
+
+                batch.put_item(Item=item)
+                saved_count += 1
+
+            except Exception as e:
+                skipped_count += 1
+                logger.error(f"Skipping invalid UV item: item={item}, error={e}")
+
+    logger.info(
+        f"Saved UV index items: saved={saved_count}, skipped={skipped_count}"
+    )
+
+    return saved_count
+
+
+
 def lambda_handler(event, context):
     weather_table_name = os.environ.get("WEATHER_DYNAMODB_TABLE_NAME")
 
@@ -277,9 +385,22 @@ def lambda_handler(event, context):
     nowcast_data = get_ultra_short_nowcast(locations)
 
     saved_count = save_nowcast_to_dynamodb(
-        nowcast_data,
-        weather_table_name
-    )
+    nowcast_data,
+    weather_table_name
+)
+
+    uv_saved_count = 0
+
+    if str(batch_id) == "0":
+        uv_bucket = os.environ.get("S3_RAW_BUCKET")
+        uv_prefix = os.environ.get("UV_INDEX_PREFIX", "raw/weather/uv_index/")
+
+        if uv_bucket:
+            uv_saved_count = save_uv_index_to_dynamodb(
+                table_name=weather_table_name,
+                bucket=uv_bucket,
+                prefix=uv_prefix
+            )
 
     return {
         "statusCode": 200,
@@ -288,4 +409,5 @@ def lambda_handler(event, context):
         "batchSize": len(locations),
         "collectedPayloadCount": len(nowcast_data),
         "savedWeatherCount": saved_count,
+        "savedUvIndexCount": uv_saved_count,
     }
