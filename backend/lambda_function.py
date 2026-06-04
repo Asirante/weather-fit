@@ -350,13 +350,11 @@ def lambda_handler(event, context):
 
         # ── 1. 기상 데이터 조회 (weather-cache) ──
         weather_map = {}
-
         region_name = region
 
         if region_code:
             weather_map = query_weather(region_code)
 
-            # 파라미터에 region 값이 없어서 비어있을 때만 DB 데이터 기반으로 채움
             if weather_map and not region_name:
                 for item in weather_map.values():
                     if item.get("region_name"):
@@ -386,10 +384,45 @@ def lambda_handler(event, context):
             )
             air_data = air_response.get("Item", {})
 
+        pm10_val = safe_float(air_data.get("pm10Value"))
+        pm25_val = safe_float(air_data.get("pm25Value"))
+        pm10_grade = str(
+            air_data.get("pm10Grade", "")
+        ).strip()
+        pm25_grade = str(
+            air_data.get("pm25Grade", "")
+        ).strip()
+
+        # 등급이 비어있으면 수치로 직접 채우기
+        if not pm10_grade and pm10_val > 0:
+            if pm10_val <= 30:
+                pm10_grade = "1"
+            elif pm10_val <= 80:
+                pm10_grade = "2"
+            elif pm10_val <= 150:
+                pm10_grade = "3"
+            else:
+                pm10_grade = "4"
+
+        if not pm25_grade and pm25_val > 0:
+            if pm25_val <= 15:
+                pm25_grade = "1"
+            elif pm25_val <= 35:
+                pm25_grade = "2"
+            elif pm25_val <= 75:
+                pm25_grade = "3"
+            else:
+                pm25_grade = "4"
+
+        # 보정된 데이터를 딕셔너리에 다시 덮어씌움
+        air_data["pm10Value"] = pm10_val
+        air_data["pm25Value"] = pm25_val
+        air_data["pm10Grade"] = pm10_grade
+        air_data["pm25Grade"] = pm25_grade
+
         # ── 3. 경로별 응답 ──
         if path == "/recommend":
             forecast_items = query_forecast(region_code)
-
             sk = build_pattern(
                 weather_map, forecast_items, air_data
             )
