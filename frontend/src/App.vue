@@ -6,7 +6,7 @@
         <nav class="nav-menu">
           <button @click="goTo('/')" :class="route.path === '/' ? 'nav-button accent-btn' : 'nav-text-btn'">홈</button>
           <button @click="goTo('/search')" :class="route.path === '/search' ? 'nav-button accent-btn' : 'nav-text-btn'">지역검색</button>
-          <button @click="goTo('/outfit')" :class="route.path === '/outfit' ? 'nav-button accent-btn' : 'nav-text-btn'">복장지표</button>
+          <!-- <button @click="goTo('/outfit')" :class="route.path === '/outfit' ? 'nav-button accent-btn' : 'nav-text-btn'">복장지표</button> -->
         </nav>
       </div>
     </header>

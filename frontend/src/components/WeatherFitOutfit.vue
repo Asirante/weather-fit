@@ -125,7 +125,7 @@
     });
 
     // ------------------------------------------------------------------------
-    // 2. OOTD 로직 (가독성 및 성능 개선)
+    // 2. OOTD 로직
     // ------------------------------------------------------------------------
     const displayOotdItems = computed(() => {
         const weather = selectedHourlyWeather.value;
@@ -133,7 +133,6 @@
 
         if (!weather || !outfit) return [];
 
-        // 아이콘 판별 로직
         let topIcon = '👕';
         if (outfit.top.includes('재킷') || outfit.top.includes('가죽') || outfit.top.includes('야상')) topIcon = '🧥';
         else if (outfit.top.includes('패딩') || outfit.top.includes('코트')) topIcon = '🧣';
@@ -145,7 +144,6 @@
         if (outfit.pack.includes('우산')) packIcon = '🌂';
         else if (weather.sky?.includes('눈')) packIcon = '🌂';
 
-        // push 반복 대신 객체 배열로 한 번에 매핑하여 반환
         return [
             { id: 1, type: topIcon, name: outfit.top, description: '추천 상의' },
             { id: 2, type: bottomIcon, name: outfit.bottom, description: '추천 하의' },
@@ -155,23 +153,24 @@
     });
 
     // ------------------------------------------------------------------------
-    // 3. UI 유틸리티 함수
+    // 3. UI 유틸리티 함수 (백엔드 데이터 null 방어 로직 추가)
     // ------------------------------------------------------------------------
     const getDustTextClass = (status) => {
         if (status === '좋음') return 'text-good';
-        if (status === '보통') return 'text-normal';
+        // '정보없음' 일 때 빨간색으로 뜨지 않도록 '보통'과 동일한 컬러 부여
+        if (status === '보통' || status === '정보없음') return 'text-normal';
         return 'text-bad'; 
     };
 
     const getMaskCardClass = (status) => {
         if (status === '좋음') return 'border-good';
-        if (status === '보통') return 'border-normal';
+        if (status === '보통' || status === '정보없음') return 'border-normal';
         return 'border-bad';
     };
 
     const getMaskHeaderClass = (status) => {
         if (status === '좋음') return 'bg-good';
-        if (status === '보통') return 'bg-normal';
+        if (status === '보통' || status === '정보없음') return 'bg-normal';
         return 'bg-bad';
     };
 
