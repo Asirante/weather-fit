@@ -376,6 +376,14 @@ def lambda_handler(event, context):
 
         # ── 2. 대기질 데이터 조회 (air-cache) ──
         station_key = gu_to_station.get(region_name)
+        if not station_key:
+            parts = region_name.split()
+            if len(parts) >= 2:
+                short_region = f"{parts[0]} {parts[1]}"
+                station_key = gu_to_station.get(
+                    short_region
+                )
+
         air_data = {}
 
         if station_key:
