@@ -1,11 +1,11 @@
 import json
 import boto3
 import os
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs
 from decimal import Decimal
 from boto3.dynamodb.conditions import Key
 
-from mapping import gu_to_station
+from mapping import gu_to_station, region_to_code
 
 IS_LOCAL = os.environ.get("AWS_SAM_LOCAL") == "true"
 
@@ -61,33 +61,54 @@ def safe_float(value, default=0.0):
 # 패턴 키 빌드 함수
 # ──────────────────────────────────────────────
 
+
 def get_temp_zone(temp):
-    if temp >= 35:   return "35over"
-    elif temp >= 30: return "30-34"
-    elif temp >= 25: return "25-29"
-    elif temp >= 20: return "20-24"
-    elif temp >= 15: return "15-19"
-    elif temp >= 10: return "10-14"
-    elif temp >= 5:  return "5-9"
-    elif temp >= 0:  return "0-4"
-    elif temp >= -10: return "-10--1"
-    else: return "under-11"
+    if temp >= 35:
+        return "35over"
+    elif temp >= 30:
+        return "30-34"
+    elif temp >= 25:
+        return "25-29"
+    elif temp >= 20:
+        return "20-24"
+    elif temp >= 15:
+        return "15-19"
+    elif temp >= 10:
+        return "10-14"
+    elif temp >= 5:
+        return "5-9"
+    elif temp >= 0:
+        return "0-4"
+    elif temp >= -10:
+        return "-10--1"
+    else:
+        return "under-11"
 
 
 def get_diff_level(diff):
-    if diff <= 2:    return "none"
-    elif diff <= 5:  return "small"
-    elif diff <= 8:  return "normal"
-    elif diff <= 12: return "large"
-    else: return "xlarge"
+    if diff <= 2:
+        return "none"
+    elif diff <= 5:
+        return "small"
+    elif diff <= 8:
+        return "normal"
+    elif diff <= 12:
+        return "large"
+    else:
+        return "xlarge"
 
 
 def get_rain_level_from_value(rn1):
-    if rn1 <= 0:     return "none"
-    elif rn1 < 1:    return "drizzle"
-    elif rn1 < 3:    return "light"
-    elif rn1 < 15:   return "moderate"
-    else: return "heavy"
+    if rn1 <= 0:
+        return "none"
+    elif rn1 < 1:
+        return "drizzle"
+    elif rn1 < 3:
+        return "light"
+    elif rn1 < 15:
+        return "moderate"
+    else:
+        return "heavy"
 
 
 def get_rain_level_from_str(rn1_str):
@@ -97,16 +118,28 @@ def get_rain_level_from_str(rn1_str):
     if "미만" in s:
         return "drizzle"
     try:
-        val = float(s.split("~")[0].replace("mm", "").strip())
-        if val >= 15:  return "heavy"
-        elif val >= 3: return "moderate"
-        elif val >= 1: return "light"
-        else:          return "drizzle"
+        val = float(
+            s.split("~")[0].replace("mm", "").strip()
+        )
+        if val >= 15:
+            return "heavy"
+        elif val >= 3:
+            return "moderate"
+        elif val >= 1:
+            return "light"
+        else:
+            return "drizzle"
     except (ValueError, IndexError):
         return "none"
 
 
-RAIN_RANK = {"none": 0, "drizzle": 1, "light": 2, "moderate": 3, "heavy": 4}
+RAIN_RANK = {
+    "none": 0,
+    "drizzle": 1,
+    "light": 2,
+    "moderate": 3,
+    "heavy": 4,
+}
 
 
 def get_pm_grade(pm10_grade, pm25_grade):
@@ -121,15 +154,21 @@ def get_pm_grade(pm10_grade, pm25_grade):
 
 
 def get_wind_level(wsd):
-    if wsd >= 3:     return "strong"
-    elif wsd >= 2:   return "moderate"
-    else: return "calm"
+    if wsd >= 3:
+        return "strong"
+    elif wsd >= 2:
+        return "moderate"
+    else:
+        return "calm"
 
 
 def get_uv_level(uv_max):
-    if uv_max >= 6:  return "high"
-    elif uv_max >= 3: return "normal"
-    else: return "low"
+    if uv_max >= 6:
+        return "high"
+    elif uv_max >= 3:
+        return "normal"
+    else:
+        return "low"
 
 
 def get_pty_type(pty_codes):
@@ -141,8 +180,15 @@ def get_pty_type(pty_codes):
     return "none"
 
 
-def build_sk(temp_zone, diff_level, rain_level,
-             pm_grade, wind_level, uv_level, pty_type):
+def build_sk(
+    temp_zone,
+    diff_level,
+    rain_level,
+    pm_grade,
+    wind_level,
+    uv_level,
+    pty_type,
+):
     return (
         f"temp:{temp_zone}|diff:{diff_level}|rain:{rain_level}"
         f"|pm:{pm_grade}|wind:{wind_level}|uv:{uv_level}|pty:{pty_type}"
@@ -153,9 +199,12 @@ def build_sk(temp_zone, diff_level, rain_level,
 # DynamoDB 조회
 # ──────────────────────────────────────────────
 
+
 def query_weather(region_code):
     response = weather_table.query(
-        KeyConditionExpression=Key("region_code").eq(region_code)
+        KeyConditionExpression=Key("region_code").eq(
+            region_code
+        )
     )
     weather_map = {}
     for item in response.get("Items", []):
@@ -167,7 +216,9 @@ def query_weather(region_code):
 
 def query_forecast(region_code):
     response = forecast_table.query(
-        KeyConditionExpression=Key("region_code").eq(region_code)
+        KeyConditionExpression=Key("region_code").eq(
+            region_code
+        )
     )
     return response.get("Items", [])
 
@@ -176,13 +227,17 @@ def parse_forecast_series(forecast_items):
     series = {}
     for item in forecast_items:
         cat = item.get("category", "")
-        fcst_time = item.get("fcstDate", "") + item.get("fcstTime", "")
+        fcst_time = item.get("fcstDate", "") + item.get(
+            "fcstTime", ""
+        )
         if cat not in series:
             series[cat] = []
-        series[cat].append({
-            "time": fcst_time,
-            "value": item.get("fcstValue", ""),
-        })
+        series[cat].append(
+            {
+                "time": fcst_time,
+                "value": item.get("fcstValue", ""),
+            }
+        )
 
     for cat in series:
         series[cat].sort(key=lambda x: x["time"])
@@ -193,14 +248,19 @@ def parse_forecast_series(forecast_items):
 def build_pattern(weather_map, forecast_items, air_data):
     series = parse_forecast_series(forecast_items)
 
-    t1h_values = [safe_float(v["value"]) for v in series.get("T1H", [])]
+    t1h_values = [
+        safe_float(v["value"])
+        for v in series.get("T1H", [])
+    ]
     if t1h_values:
         temp_min = min(t1h_values)
         temp_zone = get_temp_zone(temp_min)
         diff = max(t1h_values) - temp_min
         diff_level = get_diff_level(diff)
     else:
-        temp = safe_float(weather_map.get("T1H", {}).get("obsrValue"))
+        temp = safe_float(
+            weather_map.get("T1H", {}).get("obsrValue")
+        )
         temp_zone = get_temp_zone(temp)
         diff_level = "normal"
 
@@ -209,22 +269,31 @@ def build_pattern(weather_map, forecast_items, air_data):
         max_rain = "none"
         for v in rn1_values:
             level = get_rain_level_from_str(v["value"])
-            if RAIN_RANK.get(level, 0) > RAIN_RANK.get(max_rain, 0):
+            if RAIN_RANK.get(level, 0) > RAIN_RANK.get(
+                max_rain, 0
+            ):
                 max_rain = level
         rain_level = max_rain
     else:
-        rn1 = safe_float(weather_map.get("RN1", {}).get("obsrValue"))
+        rn1 = safe_float(
+            weather_map.get("RN1", {}).get("obsrValue")
+        )
         rain_level = get_rain_level_from_value(rn1)
 
     pm10_grade = str(air_data.get("pm10Grade", ""))
     pm25_grade = str(air_data.get("pm25Grade", ""))
     pm_grade = get_pm_grade(pm10_grade, pm25_grade)
 
-    wsd_values = [safe_float(v["value"]) for v in series.get("WSD", [])]
+    wsd_values = [
+        safe_float(v["value"])
+        for v in series.get("WSD", [])
+    ]
     if wsd_values:
         wind_level = get_wind_level(max(wsd_values))
     else:
-        wsd = safe_float(weather_map.get("WSD", {}).get("obsrValue"))
+        wsd = safe_float(
+            weather_map.get("WSD", {}).get("obsrValue")
+        )
         wind_level = get_wind_level(wsd)
 
     uv_item = weather_map.get("UV_INDEX", {})
@@ -240,12 +309,19 @@ def build_pattern(weather_map, forecast_items, air_data):
         pty_codes = [v["value"] for v in pty_values]
         pty_type = get_pty_type(pty_codes)
     else:
-        pty_code = str(weather_map.get("PTY", {}).get("obsrValue", "0"))
+        pty_code = str(
+            weather_map.get("PTY", {}).get("obsrValue", "0")
+        )
         pty_type = get_pty_type([pty_code])
 
     return build_sk(
-        temp_zone, diff_level, rain_level,
-        pm_grade, wind_level, uv_level, pty_type
+        temp_zone,
+        diff_level,
+        rain_level,
+        pm_grade,
+        wind_level,
+        uv_level,
+        pty_type,
     )
 
 
@@ -256,37 +332,46 @@ def lambda_handler(event, context):
         path = event.get("rawPath", "/")
 
         region_code = params.get("region_code", [""])[0]
-        region = unquote(params.get("region", [""])[0])
+        region = params.get("region", [""])[0]
 
         if not region_code and not region:
             return {
                 "statusCode": 400,
                 "body": json.dumps(
-                    {"error": "region_code 또는 region 파라미터가 필요합니다."},
+                    {
+                        "error": "region_code 또는 region 파라미터가 필요합니다."
+                    },
                     ensure_ascii=False,
                 ),
             }
 
+        if not region_code and region:
+            region_code = region_to_code.get(region, "")
+
         # ── 1. 기상 데이터 조회 (weather-cache) ──
         weather_map = {}
-        region_name = ""
+
+        region_name = region
 
         if region_code:
             weather_map = query_weather(region_code)
-            if weather_map:
-                for item in weather_map.values():
-                    if item.get("category") != "UV_INDEX":
-                        region_name = item.get("region_name", "")
-                        break
 
-        if not region_name and region:
-            region_name = region
+            # 파라미터에 region 값이 없어서 비어있을 때만 DB 데이터 기반으로 채움
+            if weather_map and not region_name:
+                for item in weather_map.values():
+                    if item.get("region_name"):
+                        region_name = item.get(
+                            "region_name"
+                        )
+                        break
 
         if not weather_map:
             return {
                 "statusCode": 404,
                 "body": json.dumps(
-                    {"error": "해당 지역의 기상 데이터를 찾을 수 없습니다."},
+                    {
+                        "error": "해당 지역의 기상 데이터를 찾을 수 없습니다."
+                    },
                     ensure_ascii=False,
                 ),
             }
@@ -305,7 +390,9 @@ def lambda_handler(event, context):
         if path == "/recommend":
             forecast_items = query_forecast(region_code)
 
-            sk = build_pattern(weather_map, forecast_items, air_data)
+            sk = build_pattern(
+                weather_map, forecast_items, air_data
+            )
 
             rec_response = recommend_table.get_item(
                 Key={"PK": "weather_pattern", "SK": sk}
@@ -347,14 +434,27 @@ def lambda_handler(event, context):
             forecast_items = query_forecast(region_code)
             series = parse_forecast_series(forecast_items)
 
-            temp_list = [safe_float(v["value"]) for v in series.get("T1H", [])]
-            rain_list = [v["value"] for v in series.get("RN1", [])]
-            pty_list = [v["value"] for v in series.get("PTY", [])]
-            sky_list = [v["value"] for v in series.get("SKY", [])]
+            temp_list = [
+                safe_float(v["value"])
+                for v in series.get("T1H", [])
+            ]
+            rain_list = [
+                v["value"] for v in series.get("RN1", [])
+            ]
+            pty_list = [
+                v["value"] for v in series.get("PTY", [])
+            ]
+            sky_list = [
+                v["value"] for v in series.get("SKY", [])
+            ]
 
             sky_result = []
             for i in range(len(sky_list)):
-                pty = str(pty_list[i]).strip() if i < len(pty_list) else "0"
+                pty = (
+                    str(pty_list[i]).strip()
+                    if i < len(pty_list)
+                    else "0"
+                )
                 sky = str(sky_list[i]).strip()
 
                 if pty in ("1", "2", "4"):
@@ -380,7 +480,9 @@ def lambda_handler(event, context):
             base_date = ""
             base_time = ""
             for item in weather_map.values():
-                if item.get("category") != "UV_INDEX" and item.get("baseDate"):
+                if item.get(
+                    "category"
+                ) != "UV_INDEX" and item.get("baseDate"):
                     base_date = item.get("baseDate", "")
                     base_time = item.get("baseTime", "")
                     break
