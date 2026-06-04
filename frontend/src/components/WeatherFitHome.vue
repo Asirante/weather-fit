@@ -5,29 +5,45 @@
     </div>
 
     <template v-else-if="currentWeather">
-        
         <main class="main-content">      
             <div class="top-section">        
                 <section class="card current-weather-card">
+                    
+                    <!-- 왼쪽 날씨 정보 -->
                     <div class="weather-info-left">
                         <div class="icon-wrapper">
                             <span class="placeholder-text">{{ getWeatherIcon(currentWeather.rain, currentWeather.sky) }}</span>                        
                         </div>
                         <div class="weather-details">
-                            <h2 v-html="currentWeather.location.replace(' ', '<br>')"></h2>
+                            <div class="location-header">
+                                <h2>{{ currentWeather.location }}</h2>
+                            </div>
                             <p class="temp-info">현재 기온 {{ currentWeather.temp }}°C</p>
                             <p class="dust-info">미세먼지 {{ currentWeather.pm10Status }} ({{ currentWeather.pm10 }}µg/m³)</p>
                             <p class="dust-info">초미세먼지 {{ currentWeather.pm25Status }} ({{ currentWeather.pm25 }}µg/m³)</p>                    
                         </div>
                     </div>
-                    <div class="update-time-box">
-                        <span class="time-label">갱신 시각</span>
-                        <span class="time-value">{{ currentWeather.updatedAt }}</span>
+                    
+                    <!-- 🌟 갱신 시각 & 현위치 버튼을 감싸는 우측 영역 -->
+                    <div class="weather-info-right">
+                        <button class="current-loc-btn" @click="fetchCurrentLocationWeather" title="현재 위치 날씨 가져오기">
+                            🎯 현위치
+                        </button>
+                        <div class="update-time-box">
+                            <span class="time-label">갱신 시각</span>
+                            <span class="time-value">{{ currentWeather.updatedAt }}</span>
+                        </div>
                     </div>
+
                 </section>
 
                 <section class="ootd-section">
                     <h3 class="section-title">OOTD(오늘의 복장 추천)</h3>
+                    
+                    <p v-if="currentOutfit?.reason" class="ai-reason">
+                        💡 {{ currentOutfit.reason }}
+                    </p>
+
                     <div class="ootd-grid">
                         <div v-for="item in displayOotdItems" :key="item.id" class="card ootd-item">
                             <div class="item-icon-ph">{{ item.type }}</div>
@@ -42,7 +58,7 @@
                 <section class="hourly-section">
                     <h3 class="section-title">시간별 예보</h3>
                     <div class="hourly-flex">
-                        <div v-for="(hour, index) in hourlyData" :key="index" class="card hourly-item">
+                        <div v-for="hour in hourlyData" :key="hour.time" class="card hourly-item">
                             <div class="hour-time">{{ hour.time }}</div>
                             <div class="hour-icon-ph">{{ getWeatherIcon(hour.rain, hour.sky) }}</div>
                             <div class="hour-temp">{{ hour.temp }}°C</div>
@@ -143,19 +159,23 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { searchHistory } from '../stores/usehistory';
-import { currentWeather, hourlyData, hourlyOutfitData, fetchWeatherData, isLoading } from '../stores/useWeather';
+import { currentWeather, currentOutfit, hourlyData, hourlyOutfitData, fetchWeatherData, isLoading } from '../stores/useWeather';
 
-// ------------------------------------------------------------------------
-// 1. 상태 변수 및 초기화 로직
-// ------------------------------------------------------------------------
+const route = useRoute();
+const router = useRouter();
 const isInitializing = ref(true);
 
-onMounted(() => {
-    fetchCurrentLocationWeather();
+onMounted(async () => {
+    if (route.query.region) {
+        await fetchWeatherData(route.query.region);
+        isInitializing.value = false;
+    } else {
+        fetchCurrentLocationWeather();
+    }
 });
 
-// 에러 발생 및 미지원 지역일 때 실행되는 폴백(대체) 함수
 const fallbackToHistory = async () => {
     if (searchHistory.value.length > 0) {
         await fetchWeatherData(searchHistory.value[0]);
@@ -165,11 +185,6 @@ const fallbackToHistory = async () => {
     isInitializing.value = false;
 };
 
-// ------------------------------------------------------------------------
-// 2. 카카오맵 및 위치 기반 로직 리팩터링
-// ------------------------------------------------------------------------
-
-// 카카오맵 스크립트가 완전히 로드되었는지 확인 후 실행하는 헬퍼 함수
 const runKakaoMapGeocode = (lat, lon, retryCount = 0) => {
     if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
         window.kakao.maps.load(() => {
@@ -179,61 +194,52 @@ const runKakaoMapGeocode = (lat, lon, retryCount = 0) => {
                     const regionInfo = result.find(r => r.region_type === 'H') || result[0];
                     const currentRegionName = `${regionInfo.region_1depth_name} ${regionInfo.region_2depth_name} ${regionInfo.region_3depth_name}`.trim();
                     
-                    console.log("📍 [현재 좌표 기반 행정동명]:", currentRegionName);
-                    
                     await fetchWeatherData(currentRegionName);
                     
                     if (!currentWeather.value) {
-                        console.warn("지원하지 않는 지역입니다. 이전 기록으로 돌아갑니다.");
                         fallbackToHistory();
                     } else {
                         isInitializing.value = false;
                     }
                 } else {
-                    console.error("행정동 변환 실패 상태:", status);
                     fallbackToHistory();
                 }
             });
         });
     } else {
-        // 스크립트 로드 지연 시 최대 10번(5초) 재시도
         if (retryCount < 10) {
-            console.warn(`카카오 API 로딩 대기 중... (${retryCount + 1}/10)`);
             setTimeout(() => runKakaoMapGeocode(lat, lon, retryCount + 1), 500);
         } else {
-            console.error("카카오맵 API 로드 최종 실패");
             fallbackToHistory();
         }
     }
 };
 
-// 위치 권한 요청 및 좌표 획득 메인 함수
 const fetchCurrentLocationWeather = () => {
+    isInitializing.value = true; 
+    
+    if (route.query.region) {
+        router.replace({ path: route.path });
+    }
+
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const lat = position.coords.latitude;
                 const lon = position.coords.longitude;
-                runKakaoMapGeocode(lat, lon); // 분리한 카카오 로직 실행
+                runKakaoMapGeocode(lat, lon); 
             },
             (error) => {
-                console.warn("위치 권한을 거부했거나 시간 초과 발생:", error);
+                console.error('Geolocation error:', error);
                 fallbackToHistory();
             },
-            // 권한 대기 시간을 넉넉히 10초로 늘리고, 캐시된 위치는 무시하도록 설정
             { timeout: 10000, enableHighAccuracy: false, maximumAge: 0 } 
         );
     } else {
-        console.warn("이 브라우저에서는 위치 기반 서비스를 지원하지 않습니다.");
         fallbackToHistory();
     }
 };
 
-// ------------------------------------------------------------------------
-// 3. UI 및 데이터 매핑 로직
-// ------------------------------------------------------------------------
-
-// 대기질 현황 계산 함수
 const getAqiStyle = (type, value, status) => {
     let max = 100, good = 0, warning = 0, danger = 0;
 
@@ -246,14 +252,13 @@ const getAqiStyle = (type, value, status) => {
     const percentage = Math.min((value / max) * 100, 100);
     let colorClass = 'excellent'; 
 
-    if(status == null) {
+    if (status === '매우나쁨' || status === '나쁨') colorClass = 'danger';
+    else if (status === '보통' || status === '정보없음') colorClass = 'warning';
+    else if (status === '좋음') colorClass = 'good';
+    else if (value != null) {
         if (value >= danger) colorClass = 'danger'; 
         else if (value >= warning) colorClass = 'warning'; 
         else if (value >= good) colorClass = 'good'; 
-    } else {
-        if (status == 4) colorClass = 'danger';
-        else if (status == 3) colorClass = 'warning'; 
-        else if (status == 2) colorClass = 'good'; 
     }
 
     return { width: `${percentage}%`, class: colorClass };
@@ -268,38 +273,31 @@ const aqiList = computed(() => {
     ]
 });
 
-// OOTD 추천 리스트 동적 생성
 const displayOotdItems = computed(() => {
     const weather = hourlyData.value[0] || null;
     const outfit = hourlyOutfitData.value?.length > 0 ? hourlyOutfitData.value[0] : null;
-    const items = [];
 
-    if (!weather || !outfit) return items;
+    if (!weather || !outfit) return [];
 
-    // 상의
     let topIcon = '👕';
     if (outfit.top.includes('긴팔')) topIcon = '👔';
-    else if (outfit.top.includes('재킷') || outfit.top.includes('가죽')) topIcon = '🧥';
-    else if (outfit.top.includes('패딩')) topIcon = '🧣';
-    items.push({ id: 1, type: topIcon, name: outfit.top, description: '추천 상의' });
+    else if (outfit.top.includes('재킷') || outfit.top.includes('가죽') || outfit.top.includes('야상')) topIcon = '🧥';
+    else if (outfit.top.includes('패딩') || outfit.top.includes('코트')) topIcon = '🧣';
 
-    // 하의
-    let bottomIcon = outfit.bottom.includes('반바지') ? '🩳' : '👖';
-    items.push({ id: 2, type: bottomIcon, name: outfit.bottom, description: '추천 하의' });
+    let bottomIcon = outfit.bottom.includes('반바지') || outfit.bottom.includes('치마') ? '🩳' : '👖';
 
-    // 소지품
     let packIcon = '✋';
     if (outfit.pack.includes('우산')) packIcon = '☔';
     else if (weather.sky?.includes('눈')) packIcon = '🌨️';
-    items.push({ id: 3, type: packIcon, name: outfit.pack === '불필요' ? '없음' : outfit.pack, description: '추천 소지품' });
 
-    // 마스크
-    items.push({ id: 4, type: '😷', name: outfit.mask === '마스트 선택' ? '자유' : outfit.mask, description: '마스크 추천' });
-
-    return items;
+    return [
+        { id: 1, type: topIcon, name: outfit.top, description: '추천 상의' },
+        { id: 2, type: bottomIcon, name: outfit.bottom, description: '추천 하의' },
+        { id: 3, type: packIcon, name: outfit.pack === '불필요' ? '없음' : outfit.pack, description: '추천 소지품' },
+        { id: 4, type: '😷', name: outfit.mask === '마스크 선택' ? '자유' : outfit.mask, description: '마스크 추천' }
+    ];
 });
 
-// 날씨 아이콘 계산
 const getWeatherIcon = (rain, sky) => {
     if(!sky) return '🌤️'; 
     if (rain === '강수없음') {
@@ -313,9 +311,6 @@ const getWeatherIcon = (rain, sky) => {
     return '🌤️';
 };
 
-// ------------------------------------------------------------------------
-// 4. 정적 가이드 데이터
-// ------------------------------------------------------------------------
 const tempGuides = ref([
     { id: 1, label: 'H', color: 'var(--color-red-500)', range: '28°C 이상', sub: '무더위', clothes: ['민소매', '반팔', '반바지', '짧은 치마', '린넨 소재'], desc: '자외선 차단제 필수, 통기성 좋은 옷 추천' },
     { id: 2, label: 'W', color: 'var(--color-amber-600)', range: '23 ~ 27°C', sub: '따뜻함', clothes: ['반팔', '얇은 셔츠', '반바지', '면바지'], desc: '에어컨 실내용 얇은 겉옷 지참 추천' },
@@ -334,9 +329,6 @@ const conditionGuides = ref([
 </script>
 
 <style scoped>
-/* --------------------------------------------------------------------------
-   전체 공통 레이아웃 (정렬 강제 동기화)
--------------------------------------------------------------------------- */
 .main-content, 
 .guide-container {
     max-width: 1200px !important;
@@ -376,8 +368,146 @@ const conditionGuides = ref([
     color: var(--color-text-900); 
 }
 
+.ai-reason {
+    font-size: 1.05rem;
+    color: var(--color-amber-600);
+    background: #FFFBEB;
+    padding: 0.8rem 1.2rem;
+    border-radius: 8px;
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+    display: inline-block;
+}
+
 /* --------------------------------------------------------------------------
-   로딩 스피너
+   🌟 좌측 요약 카드 Flexbox 완벽 교정 (현위치 버튼 이동)
+-------------------------------------------------------------------------- */
+.top-section { 
+    display: grid; 
+    grid-template-columns: 1fr 1.3fr; 
+    gap: 2rem; 
+}
+
+.current-weather-card { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    padding: 2rem; 
+    gap: 1rem; 
+}
+
+.weather-info-left { 
+    display: flex; 
+    align-items: center; 
+    gap: 1.5rem; 
+    flex: 1; 
+    min-width: 0; 
+}
+
+.icon-wrapper {
+    flex-shrink: 0; 
+}
+
+.weather-details {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0; 
+    width: 100%;
+}
+
+.location-header {
+    margin-bottom: 0.75rem;
+}
+
+.weather-details h2 { 
+    font-size: 1.35rem; 
+    margin: 0; 
+    color: var(--color-text-900); 
+    word-break: keep-all; 
+    line-height: 1.3;
+}   
+
+/* 🌟 우측 영역 (현위치 버튼 + 갱신 시각) 묶음 */
+.weather-info-right {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.current-loc-btn {
+    width: 100%; /* 박스 너비와 동일하게 맞춤 */
+    background-color: var(--color-neutral-100);
+    border: 1px solid var(--color-neutral-200);
+    color: var(--color-text-600);
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap; 
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.current-loc-btn:hover {
+    background-color: var(--color-neutral-200);
+    color: var(--color-text-900);
+}
+
+.update-time-box { 
+    background-color: var(--color-neutral-50); 
+    border: 1px solid var(--color-neutral-200); 
+    border-radius: 12px; 
+    padding: 1.5rem 1.2rem; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    flex-shrink: 0; 
+    min-width: 80px;
+    width: 100%; /* 버튼과 너비 동기화 */
+    box-sizing: border-box;
+}
+
+.placeholder-text { 
+    color: var(--color-text-400); 
+    font-size: 5rem; 
+}
+
+.temp-info { 
+    color: var(--color-text-600); 
+    margin: 0 0 0.5rem 0; 
+}
+
+.dust-info { 
+    color: var(--color-text-600); 
+    margin: 0 0 0.25rem 0; 
+    font-size: 0.9rem; 
+}
+
+.time-label { 
+    color: var(--color-text-600); 
+    font-size: 0.75rem; 
+    margin-bottom: 0.5rem; 
+    text-align: center; 
+    white-space: nowrap;
+}
+
+.time-value { 
+    color: var(--color-text-600); 
+    font-size: 0.75rem; 
+    text-align: center; 
+    white-space: nowrap; 
+}
+
+/* --------------------------------------------------------------------------
+   나머지 CSS 유지
 -------------------------------------------------------------------------- */
 .loading-screen {
     display: flex;
@@ -405,80 +535,6 @@ const conditionGuides = ref([
     100% { transform: rotate(360deg); }
 }
 
-/* --------------------------------------------------------------------------
-   상단 날씨 영역 (Top Section)
--------------------------------------------------------------------------- */
-.top-section { 
-    display: grid; 
-    grid-template-columns: 1fr 1.3fr; 
-    gap: 2rem; 
-}
-
-.current-weather-card { 
-    display: flex; 
-    justify-content: space-between; 
-    align-items: center; 
-    padding: 2rem; 
-}
-
-.weather-info-left { 
-    display: flex; 
-    align-items: center; 
-    gap: 1.5rem; 
-}
-
-.placeholder-text { 
-    color: var(--color-text-400); 
-    font-size: 5rem; 
-}
-
-.weather-details h2 { 
-    font-size: 1.35rem; 
-    margin: 0 0 0.75rem 0; 
-    color: var(--color-text-900); 
-    white-space: pre-wrap; 
-}   
-
-.temp-info { 
-    color: var(--color-text-600); 
-    margin: 0 0 0.5rem 0; 
-}
-
-.dust-info { 
-    color: var(--color-text-600); 
-    margin: 0 0 0.25rem 0; 
-    font-size: 0.9rem; 
-}
-
-.update-time-box { 
-    background-color: var(--color-neutral-50); 
-    border: 1px solid var(--color-neutral-200); 
-    border-radius: 12px; 
-    padding: 1.5rem 1.2rem; 
-    display: flex; 
-    flex-direction: column; 
-    align-items: center; 
-    justify-content: center; 
-}
-
-.time-label { 
-    color: var(--color-text-600); 
-    font-size: 0.75rem; 
-    margin-bottom: 0.5rem; 
-    text-align: center; 
-    white-space: nowrap;
-}
-
-.time-value { 
-    color: var(--color-text-600); 
-    font-size: 0.75rem; 
-    text-align: center; 
-    white-space: nowrap; 
-}
-
-/* --------------------------------------------------------------------------
-   OOTD 영역
--------------------------------------------------------------------------- */
 .ootd-section { display: flex; flex-direction: column; }
 .ootd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; flex: 1; }
 .ootd-item { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5rem 1rem; }
@@ -505,9 +561,6 @@ const conditionGuides = ref([
     text-align: center;
 }
 
-/* --------------------------------------------------------------------------
-   하단 영역 (Bottom Section)
--------------------------------------------------------------------------- */
 .bottom-section { 
     display: grid; 
     grid-template-columns: 1fr 320px; 
@@ -529,7 +582,6 @@ const conditionGuides = ref([
 .hour-icon-ph { color: var(--color-text-400); font-size: 2.5rem; margin-bottom: 1.5rem; }
 .hour-temp { font-weight: 600; font-size: 1.1rem; color: var(--color-text-900); }
 
-/* 대기질 현황 */
 .air-quality-card { padding: 2rem; }
 .aqi-bars { display: flex; flex-direction: column; gap: 1.25rem; }
 .aqi-row { display: flex; align-items: center; }
@@ -556,9 +608,6 @@ const conditionGuides = ref([
 
 .aqi-summary { margin-top: 1rem; }
 
-/* --------------------------------------------------------------------------
-   가이드 섹션
--------------------------------------------------------------------------- */
 .guide-banner { 
     background-color: var(--color-navy-800); 
     border-radius: 20px; 

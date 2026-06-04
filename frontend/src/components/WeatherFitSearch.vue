@@ -20,7 +20,7 @@
                             @click="selectLocation(loc)"
                             class="autocomplete-item"
                         >
-                        {{ loc }}
+                            {{ loc }}
                         </li>
                     </ul>
                 </div>
@@ -97,7 +97,7 @@
                             </div>
                         </div>
 
-                        <button class="action-btn" @click="goToDressIndex">
+                        <button class="action-btn" @click="goToHome">
                             복장지표 확인 👕
                         </button>
                     </div>
@@ -115,9 +115,6 @@
 
     const router = useRouter();
 
-    // ------------------------------------------------------------------------
-    // 1. 상태 변수 (State)
-    // ------------------------------------------------------------------------
     const searchQuery = ref('');
     const showAutoComplete = ref(false);
     const sggData = ref([]); 
@@ -125,16 +122,12 @@
     const lastAttemptedRegion = ref(''); 
     const showBottomPanel = ref(false);
     
-    // 카카오맵 관련 상태
     const isMapLoaded = ref(false);
     let map = null;
     let marker = null;
     let geocoder = null;
     let currentPolygons = []; 
 
-    // ------------------------------------------------------------------------
-    // 2. Computed
-    // ------------------------------------------------------------------------
     const filteredLocations = computed(() => {
         if (!searchQuery.value) return [];
         const query = searchQuery.value.toLowerCase();
@@ -142,11 +135,7 @@
         return [...new Set(names)].filter(name => name.includes(query));
     });
 
-    // ------------------------------------------------------------------------
-    // 3. 생명주기 훅 (Lifecycle)
-    // ------------------------------------------------------------------------
     onMounted(async () => {
-        // 행정동 GeoJSON 데이터 로드
         try {
             const response = await fetch('/HangJeongDong_ver20260201.json'); 
             const data = await response.json();
@@ -154,22 +143,15 @@
         } catch (e) { 
             console.error("JSON 로드 실패:", e); 
         }
-
-        // 카카오맵 초기화 (안전하게 로드 대기)
         loadKakaoMap();
     });
 
-    // ------------------------------------------------------------------------
-    // 4. 카카오맵 관련 로직 (팀장님 피드백 반영)
-    // ------------------------------------------------------------------------
-    
-    // SDK가 비동기로 로드될 때를 대비해 재시도(Polling) 로직 적용
     const loadKakaoMap = () => {
         if (window.kakao && window.kakao.maps) {
             window.kakao.maps.load(() => initMap());
         } else {
             console.log("카카오맵 SDK 대기 중...");
-            setTimeout(loadKakaoMap, 300); // 300ms 후 다시 체크
+            setTimeout(loadKakaoMap, 300);
         }
     };
 
@@ -212,9 +194,6 @@
         }
     };
 
-    // ------------------------------------------------------------------------
-    // 5. 검색 및 이벤트 처리 로직
-    // ------------------------------------------------------------------------
     const handleInput = () => { 
         showAutoComplete.value = searchQuery.value.length > 0; 
     };
@@ -250,7 +229,6 @@
                 marker = new window.kakao.maps.Marker({ position: coords, map: map });
                 drawSggPolygon(targetFeature); 
                 
-                // 날씨 데이터 호출
                 await fetchWeatherData(officialName);
                 isUnsupported.value = !!errorMessage.value || (currentWeather.value?.location.includes('지원하지 않'));
 
@@ -271,23 +249,21 @@
         searchHistory.value.splice(index, 1);
     };
 
-    const goToDressIndex = () => {
+    // 🌟 요구사항 1 반영: 검색 결과 들고 홈('/')으로 이동
+    const goToHome = () => {
         if (isUnsupported.value) {
-            alert('현재 지원하지 않는 지역입니다.\n복장지표 확인 시 [인천광역시 남동구 구월3동] 데이터로 안내됩니다.');
+            alert('현재 지원하지 않는 지역입니다.\n홈 화면 이동 시 [인천광역시 남동구 구월3동] 데이터로 안내됩니다.');
         }
         const regionToPass = isUnsupported.value ? '인천광역시 남동구 구월3동' : currentWeather.value.location;
         addToHistory(regionToPass); 
-        router.push({ path: '/outfit', query: { region: regionToPass } });
+        router.push({ path: '/', query: { region: regionToPass } });
     };
 
-    // ------------------------------------------------------------------------
-    // 6. UI 유틸리티 로직
-    // ------------------------------------------------------------------------
     const getDustClass = (status) => {
         if (status === '좋음') return 'good';
         if (status === '보통') return 'normal';
         if (status === '나쁨' || status === '매우나쁨') return 'bad';
-        return '';
+        return ''; 
     };
 
     const getLocationParts = (location) => {
@@ -303,6 +279,7 @@
     };
 
     const getWeatherIcon = (rain, sky) => {
+        if (!sky) return '🌤️'; 
         switch (rain) {
             case '강수없음': 
                 if (sky === '맑음') return '☀️';
@@ -314,158 +291,56 @@
                 if (sky.includes('흐림')) return '⛅';
                 break;
         }
+        return '🌤️';
     };
 </script>
 
 <style scoped>
-    /* --------------------------------------------------------------------------
-       전체 레이아웃
-    -------------------------------------------------------------------------- */
-    .search-layout { 
-        flex: 1; 
-        max-width: 1200px; 
-        width: 100%; 
-        margin: 2rem auto; 
-        padding: 0 1rem; 
-        display: grid; 
-        grid-template-columns: 380px 1fr; 
-        gap: 1.5rem; 
-        box-sizing: border-box; 
-    }
-    
-    .left-panel { 
-        display: flex; 
-        flex-direction: column; 
-        gap: 1.5rem; 
-        align-items: stretch; 
-        width: 100%; 
-    }
-
-    /* --------------------------------------------------------------------------
-       검색창 & 자동완성
-    -------------------------------------------------------------------------- */
+    /* ... Search CSS 유지 ... */
+    .search-layout { flex: 1; max-width: 1200px; width: 100%; margin: 2rem auto; padding: 0 1rem; display: grid; grid-template-columns: 380px 1fr; gap: 1.5rem; box-sizing: border-box; }
+    .left-panel { display: flex; flex-direction: column; gap: 1.5rem; align-items: stretch; width: 100%; }
     .search-box-container { position: relative; display: flex; gap: 0.5rem; height: 48px; box-sizing: border-box; z-index: 50; }
     .search-input-wrapper { position: relative; flex: 1; display: flex; align-items: center; background: #FFFFFF; border: 1px solid var(--color-neutral-200); border-radius: 8px; padding: 0 1rem; box-sizing: border-box; height: 100%; }
     .search-input { flex: 1; height: 100%; border: none; outline: none; font-size: 0.95rem; color: var(--color-text-900); padding: 0; margin-left: 0.5rem; width: 100%; }
     .search-submit-btn { background-color: var(--color-red-500); color: #FFFFFF; border: none; border-radius: 8px; padding: 0 1.5rem; font-weight: 600; font-size: 1rem; cursor: pointer; white-space: nowrap; height: 100%; box-sizing: border-box; }
-    
     .autocomplete-list { position: absolute; top: calc(100% + 8px); left: 0; width: 100%; background: #FFFFFF; border: 1px solid var(--color-neutral-200); border-radius: 8px; margin: 0; padding: 0; list-style-type: none !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 999; max-height: 250px; overflow-y: auto; }
     .autocomplete-item { padding: 0.8rem 1.2rem; cursor: pointer; border-bottom: 1px solid var(--color-neutral-100); font-size: 0.95rem; color: var(--color-text-900); text-align: left; }
-
-    /* --------------------------------------------------------------------------
-       최근 검색 기록
-    -------------------------------------------------------------------------- */
     .search-results-container { background: #FFFFFF; border-radius: 12px; border: 1px solid var(--color-neutral-200); padding: 1.5rem; flex: 1; }
     .empty-history { color: var(--color-text-400); text-align: center; margin-top: 2rem; }
-    
-    .result-card { 
-        border: 1px solid var(--color-neutral-200); 
-        border-radius: 8px; 
-        padding: 1rem; 
-        margin-top: 0.5rem; 
-        cursor: pointer; 
-        display: flex; 
-        align-items: center; 
-        justify-content: space-between; 
-        transition: background-color 0.2s;
-    }
+    .result-card { border: 1px solid var(--color-neutral-200); border-radius: 8px; padding: 1rem; margin-top: 0.5rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: background-color 0.2s; }
     .result-card:hover { background-color: var(--color-neutral-50); }
     .result-name { font-size: 1.05rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-900); flex: 1; }
-    
-    .delete-btn {
-        background: none;
-        border: none;
-        color: var(--color-text-400);
-        font-size: 1.1rem;
-        cursor: pointer;
-        padding: 0.2rem 0.5rem;
-        transition: color 0.2s;
-    }
+    .delete-btn { background: none; border: none; color: var(--color-text-400); font-size: 1.1rem; cursor: pointer; padding: 0.2rem 0.5rem; transition: color 0.2s; }
     .delete-btn:hover { color: var(--color-red-500); }
-
-    /* --------------------------------------------------------------------------
-       지도 & 로딩 스피너
-    -------------------------------------------------------------------------- */
     .map-section { position: relative; background: white; border-radius: 12px; border: 1px solid var(--color-neutral-200); overflow: hidden; }
     .map-container { width: 100%; height: 100%; min-height: 550px; }
-    
-    .map-placeholder {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        min-height: 550px; 
-        background-color: var(--color-neutral-50, #f8fafc);
-        color: var(--color-text-600, #475569);
-        font-weight: 600;
-        font-size: 1.1rem;
-        gap: 1.5rem;
-    }
-
-    .spinner {
-        width: 50px;
-        height: 50px;
-        border: 5px solid var(--color-neutral-200, #e2e8f0); 
-        border-top: 5px solid var(--color-amber-500, #f59e0b); 
-        border-radius: 50%;
-        animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite; 
-    }
-
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-
-    /* --------------------------------------------------------------------------
-       하단 유리창 날씨 패널
-    -------------------------------------------------------------------------- */
-    .bottom-weather-panel { 
-        position: absolute; 
-        bottom: 20px; left: 20px; right: 20px; z-index: 10; 
-        background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); 
-        border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 16px; 
-        padding: 1.5rem 2rem; 
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); 
-        min-height: 115px; 
-        display: flex;
-        align-items: center;
-        box-sizing: border-box;
-    }
-    
+    .map-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 550px; background-color: var(--color-neutral-50, #f8fafc); color: var(--color-text-600, #475569); font-weight: 600; font-size: 1.1rem; gap: 1.5rem; }
+    .spinner { width: 50px; height: 50px; border: 5px solid var(--color-neutral-200, #e2e8f0); border-top: 5px solid var(--color-amber-500, #f59e0b); border-radius: 50%; animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .bottom-weather-panel { position: absolute; bottom: 20px; left: 20px; right: 20px; z-index: 10; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 16px; padding: 1.5rem 2rem; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); min-height: 115px; display: flex; align-items: center; box-sizing: border-box; }
     .weather-content { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 2rem; }
     .weather-data-box { display: flex; align-items: center; gap: 3rem; flex: 1; }
     .weather-data-box.unsupported { gap: 2rem; }
     .unsupported-msg-box { display: flex; flex-direction: column; justify-content: center; gap: 0.4rem; flex: 1; }
-
-    /* 텍스트 디테일 */
     .location-group { min-width: 150px; flex-shrink: 0; }
     .area-title { margin: 0; line-height: 1.3; }
     .area-title .city { font-size: 1rem; font-weight: 600; color: var(--color-text-600); }
     .area-title .district { font-size: 1.35rem; font-weight: 800; color: #1e293b; }
-    
     .info-group .label { font-size: 0.75rem; color: #64748b; display: block; margin-bottom: 0.2rem; }
     .status-warning { color: var(--color-red-500); font-weight: 700; font-size: 1.1rem; flex: 1;}
-    
     .data-group { display: flex; align-items: center; gap: 1.5rem; flex-shrink: 0; }
     .temp-display { display: flex; align-items: center; gap: 0.5rem; white-space: nowrap; }
     .temp-display .icon { font-size: 2rem; }
     .temp-display .degree { font-size: 1.8rem; font-weight: 800; color: #1e293b; }
-    
     .divider { width: 1px; height: 30px; background: #cbd5e1; }
-    
     .dust-display { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; }
     .dust-display .dust-label { font-size: 0.9rem; color: #64748b; margin: 0; }
-    
     .status { font-weight: 700; font-size: 1.1rem; }
     .status.good { color: #10b981; }
     .status.normal { color: #f59e0b; }
     .status.bad { color: #ef4444; }
-    
     .action-btn { background: #1e293b; color: white; border: none; padding: 0.8rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; transition: transform 0.2s; white-space: nowrap; }
     .action-btn:hover { transform: scale(1.05); }
-
-    /* 애니메이션 */
     .slide-up-enter-active, .slide-up-leave-active { transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
     .slide-up-enter-from, .slide-up-leave-to { transform: translateY(40px); opacity: 0; }
 </style>

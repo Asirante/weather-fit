@@ -7,8 +7,9 @@ export const hourlyOutfitData = ref([]);
 export const isLoading = ref(false);
 export const errorMessage = ref('');
 
-// 상태 코드를 한글로 변환하는 함수
+// 상태 코드를 한글로 변환하는 함수 (null 방어 로직 추가)
 const getDustStatusText = (statusCode) => {
+    if (statusCode === null || statusCode === undefined) return "정보없음";
     const code = String(statusCode);
     if (code === "1") return "좋음";
     if (code === "2") return "보통";
@@ -17,12 +18,11 @@ const getDustStatusText = (statusCode) => {
     return "보통";
 };
 
-// ✅ Lambda 응답 파싱 헬퍼 - body가 문자열로 감싸져 있으므로 JSON.parse 필요
+// Lambda 응답 파싱 헬퍼
 const parseLambdaResponse = (raw) => {
     if (raw && typeof raw.body === 'string') {
         return JSON.parse(raw.body);
     }
-    // Lambda Function URL 직접 호출 시 body 없이 바로 데이터가 오는 경우도 대응
     return raw;
 };
 
@@ -47,25 +47,29 @@ export const fetchWeatherData = async (regionName) => {
             throw new Error(`서버 에러 발생 (날씨: ${weatherRes.status}, 추천: ${recommendRes.status})`);
         }
 
-        // ✅ Lambda는 { statusCode, body: "문자열" } 구조로 반환하므로 body를 파싱
         const weatherData = parseLambdaResponse(await weatherRes.json());
-        const recommendList = parseLambdaResponse(await recommendRes.json());
+        const recommendData = parseLambdaResponse(await recommendRes.json());
 
-        // 백엔드에서 받은 배열 데이터 추출
-        const tempArray = weatherData.temp || [];
+        // 🌟 백엔드 변경 1: 현재 기온과 예보 기온 분리
+        const currentTemp = weatherData.temp !== undefined ? Math.round(Number(weatherData.temp)) : 15;
+        const tempForecast = weatherData.tempForecast || [];
         const rainArray = weatherData.rain || [];
         const skyArray = weatherData.sky || [];
-        const updateTime = new Date();
+        
+        // 🌟 백엔드 변경 2: top, bottom 배열을 문자열로 결합하여 기존 UI(.includes) 완벽 호환
+        const topStr = Array.isArray(recommendData.top) ? recommendData.top.join(', ') : (recommendData.top || '데이터 없음');
+        const bottomStr = Array.isArray(recommendData.bottom) ? recommendData.bottom.join(', ') : (recommendData.bottom || '데이터 없음');
 
+        const updateTime = new Date();
         updateTime.setMinutes(Math.floor(updateTime.getMinutes() / 30) * 30);
 
-        // 1. 현재 날씨 데이터 매핑 (배열의 첫 번째 값을 현재 날씨로 사용)
+        // 1. 현재 날씨 데이터 매핑
         currentWeather.value = {
             location: regionName,
-            temp: tempArray.length > 0 ? Math.round(Number(tempArray[0])) : 15,
-            pm10Status: getDustStatusText(weatherData.pm10Status),
+            temp: currentTemp,
+            pm10Status: getDustStatusText(weatherData.pm10Grade),
             pm10: weatherData.pm10 || 0,
-            pm25Status: getDustStatusText(weatherData.pm25Status),
+            pm25Status: getDustStatusText(weatherData.pm25Grade),
             pm25: weatherData.pm25 || 0,
             o3: weatherData.o3 || 0,
             rain: rainArray.length > 0 ? rainArray[0] : '강수없음',
@@ -73,20 +77,20 @@ export const fetchWeatherData = async (regionName) => {
             updatedAt: updateTime.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: 'numeric', hour12: true })
         };
 
-        // 2. 현재 옷차림 추천 데이터 매핑 (배열의 첫 번째 항목)
-        const firstOutfit = Array.isArray(recommendList) && recommendList.length > 0 ? recommendList[0] : {};
+        // 2. 현재 옷차림 추천 데이터 매핑
         currentOutfit.value = {
-            top: firstOutfit.top || '데이터 없음',
-            bottom: firstOutfit.bottom || '데이터 없음',
-            mask: firstOutfit.mask || '선택',
-            pack: firstOutfit.pack || '불필요'
+            top: topStr,
+            bottom: bottomStr,
+            mask: recommendData.mask || '선택 사항',
+            pack: recommendData.pack || '불필요',
+            reason: recommendData.reason || ''
         };
 
         const today = new Date();
         today.setMinutes(0, 0, 0);
 
         // 3. 시간별 예보 데이터 동적 매핑
-        hourlyData.value = tempArray.map((tempStr, index) => {
+        hourlyData.value = tempForecast.map((tempStr, index) => {
             const date = new Date(today);
             date.setHours(today.getHours() + index);
             
@@ -96,24 +100,20 @@ export const fetchWeatherData = async (regionName) => {
                 rain: rainArray[index] || '강수없음',
                 sky: skyArray[index] || '맑음',
                 pm25: weatherData.pm25 || 0,
-                pm25Status: getDustStatusText(weatherData.pm25Status)
+                pm25Status: getDustStatusText(weatherData.pm25Grade)
             };
         });
 
-        // 4. 시간별 옷차림 데이터 - 백엔드 실제 데이터 사용
-        hourlyOutfitData.value = tempArray.map((_, index) => {
+        // 4. 시간별 옷차림 데이터 - 단일 추천값을 모든 시간대에 동일하게 복제
+        hourlyOutfitData.value = tempForecast.map((_, index) => {
             const date = new Date(today);
             date.setHours(today.getHours() + index);
 
-            const outfit = (Array.isArray(recommendList) && recommendList[index])
-                ? recommendList[index]
-                : firstOutfit;
-
             return {
-                top: outfit.top || '데이터 없음',
-                bottom: outfit.bottom || '데이터 없음',
-                mask: outfit.mask || '선택 사항',
-                pack: outfit.pack || '불필요',
+                top: topStr,
+                bottom: bottomStr,
+                mask: recommendData.mask || '선택 사항',
+                pack: recommendData.pack || '불필요',
                 time: date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true })
             };
         });
