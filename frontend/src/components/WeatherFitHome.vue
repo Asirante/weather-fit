@@ -58,10 +58,7 @@
                             <div class="location-header">
                                 <h2>{{ currentWeather.location }}</h2>
                             </div>
-                            <p class="temp-info">
-                                현재 기온 {{ currentWeather.temp }}°C
-                                <span v-if="currentWeather.feelsLike != null" class="feels-like">체감 {{ currentWeather.feelsLike }}°C</span>
-                            </p>
+                            <p class="temp-info">현재 기온 {{ currentWeather.temp }}°C</p>
                             <p class="dust-info">미세먼지 {{ currentWeather.pm10Status }} ({{ currentWeather.pm10 }}µg/m³)</p>
                             <p class="dust-info">초미세먼지 {{ currentWeather.pm25Status }} ({{ currentWeather.pm25 }}µg/m³)</p>
                             <p v-if="currentWeather.uvLevel" class="dust-info">자외선 {{ currentWeather.uvLevel }} ({{ currentWeather.uv }})</p>
@@ -80,7 +77,7 @@
                 </section>
 
                 <section class="ootd-section">
-                    <h3 class="section-title">OOTD ({{ selectedHourlyWeather?.time }} 기준)</h3>
+                    <h3 class="section-title">OOTD</h3>
 
                     <p v-if="currentOutfit?.reason" class="ai-reason">
                         💡 {{ currentOutfit.reason }}
@@ -88,16 +85,16 @@
 
                     <div class="ootd-grid">
                         <template v-for="item in displayOotdItems" :key="item.id">
-                            <!-- 마스크: 클릭/호버로 상세가 열리는 인터랙티브 카드 -->
+                            <!-- 마스크: PC=호버 / 모바일=탭 으로 상세 노출 -->
                             <div
                                 v-if="item.isMask"
                                 class="card ootd-item mask-interactive"
-                                :class="[{ expanded: maskExpanded }, getMaskBorderClass(selectedHourlyWeather?.pm25Status)]"
+                                :class="[{ expanded: maskExpanded }, getMaskBorderClass(currentWeather.pm25Status)]"
                                 role="button"
                                 tabindex="0"
                                 :aria-expanded="maskExpanded"
                                 aria-label="마스크 추천 상세 보기"
-                                @click="maskExpanded = !maskExpanded"
+                                @click="toggleMask"
                                 @keydown.enter.prevent="maskExpanded = !maskExpanded"
                                 @keydown.space.prevent="maskExpanded = !maskExpanded"
                             >
@@ -105,14 +102,14 @@
                                     <div class="item-icon-ph" role="img" aria-label="마스크 추천">😷</div>
                                     <div class="item-desc">마스크 추천</div>
                                     <div class="item-name">{{ item.name }}</div>
-                                    <div class="mask-hint">자세히 보기 ▾</div>
+                                    <div class="mask-hint">{{ isTouch ? '탭하여 상세 보기' : '마우스를 올려 상세 보기' }}</div>
                                 </div>
-                                <div class="mask-detail" :class="getMaskBorderClass(selectedHourlyWeather?.pm25Status)">
-                                    <div class="mask-detail-header" :class="getMaskBgClass(selectedHourlyWeather?.pm25Status)">😷 마스크 추천</div>
+                                <div class="mask-detail" :class="getMaskBorderClass(currentWeather.pm25Status)">
+                                    <div class="mask-detail-header" :class="getMaskBgClass(currentWeather.pm25Status)">😷 마스크 추천</div>
                                     <div class="mask-detail-body">
                                         <p class="mask-grade">
-                                            PM2.5 {{ selectedHourlyWeather?.pm25 }}㎍/㎥ →
-                                            <strong :class="getDustTextClass(selectedHourlyWeather?.pm25Status)">{{ selectedHourlyWeather?.pm25Status }}</strong>
+                                            PM2.5 {{ currentWeather.pm25 }}㎍/㎥ →
+                                            <strong :class="getDustTextClass(currentWeather.pm25Status)">{{ currentWeather.pm25Status }}</strong>
                                         </p>
                                         <p class="mask-rec">{{ item.name }}</p>
                                         <div class="badge-group">
@@ -138,7 +135,7 @@
 
             <div class="bottom-section">
                 <section class="hourly-section">
-                    <h3 class="section-title">시간별 예보 (클릭하여 복장 확인)</h3>
+                    <h3 class="section-title">시간별 예보 <span class="section-hint">클릭해 상세 보기</span></h3>
                     <div class="hourly-flex">
                         <div
                             v-for="(hour, index) in hourlyData"
@@ -155,7 +152,22 @@
                             <div class="hour-time">{{ hour.time }} {{ index === 0 ? '(지금)' : '' }}</div>
                             <div class="hour-icon-ph" role="img" :aria-label="getWeatherLabel(hour.rain, hour.sky)">{{ getWeatherIcon(hour.rain, hour.sky) }}</div>
                             <div class="hour-temp">{{ hour.temp }}°C</div>
-                            <div v-if="hour.feelsLike != null" class="hour-feels">체감 {{ hour.feelsLike }}°C</div>
+                        </div>
+                    </div>
+
+                    <!-- 선택한 시간의 예측 상세 -->
+                    <div v-if="selectedHourlyWeather" class="hour-detail card">
+                        <div class="hd-head">
+                            <span class="hd-icon" role="img" :aria-label="getWeatherLabel(selectedHourlyWeather.rain, selectedHourlyWeather.sky)">{{ getWeatherIcon(selectedHourlyWeather.rain, selectedHourlyWeather.sky) }}</span>
+                            <div class="hd-headtext">
+                                <span class="hd-time">{{ selectedHourlyWeather.time }} {{ selectedHourIndex === 0 ? '(지금)' : '' }}</span>
+                                <span class="hd-sky">{{ getWeatherLabel(selectedHourlyWeather.rain, selectedHourlyWeather.sky) }}</span>
+                            </div>
+                        </div>
+                        <div class="hd-stats">
+                            <div class="hd-stat"><span class="hd-label">기온</span><span class="hd-value">{{ selectedHourlyWeather.temp }}°C</span></div>
+                            <div class="hd-stat" v-if="selectedHourlyWeather.feelsLike != null"><span class="hd-label">체감</span><span class="hd-value">{{ selectedHourlyWeather.feelsLike }}°C</span></div>
+                            <div class="hd-stat"><span class="hd-label">강수</span><span class="hd-value">{{ selectedHourlyWeather.rain }}</span></div>
                         </div>
                     </div>
                 </section>
@@ -193,6 +205,12 @@ const isInitializing = ref(true);
 // 시간별 선택 + 마스크 카드 인터랙션 상태
 const selectedHourIndex = ref(0);
 const maskExpanded = ref(false);
+const isTouch = ref(false); // 터치 기기 여부 (PC=호버, 모바일=탭 분기)
+
+// 마스크 카드: 터치 기기에서만 탭으로 토글 (PC는 CSS 호버가 담당)
+const toggleMask = () => {
+    if (isTouch.value) maskExpanded.value = !maskExpanded.value;
+};
 
 const selectHour = (index) => {
     selectedHourIndex.value = index;
@@ -220,6 +238,11 @@ const getDustTextClass = (status) => {
 };
 
 onMounted(async () => {
+    // 호버 불가(터치) 기기 판별
+    if (window.matchMedia) {
+        isTouch.value = window.matchMedia('(hover: none)').matches;
+    }
+
     if (route.query.region) {
         await fetchWeatherData(route.query.region);
         isInitializing.value = false;
@@ -325,10 +348,10 @@ const aqiList = computed(() => {
     ]
 });
 
-// 선택된 시간대 기준 OOTD (시간별 예보 클릭 시 함께 갱신)
+// OOTD는 '현재 기준' 고정 (시간별 클릭과 분리)
 const displayOotdItems = computed(() => {
-    const weather = selectedHourlyWeather.value;
-    const outfit = hourlyOutfitData.value?.length > 0 ? hourlyOutfitData.value[selectedHourIndex.value] : null;
+    const weather = hourlyData.value[0] || null;
+    const outfit = hourlyOutfitData.value?.length > 0 ? hourlyOutfitData.value[0] : null;
 
     if (!weather || !outfit) return [];
 
@@ -370,12 +393,13 @@ const displayOotdItems = computed(() => {
     box-sizing: border-box; /* 패딩 삐져나옴 방지 */
 }
 
-.section-title { 
-    font-size: 1.25rem; 
-    font-weight: 700; 
-    margin: 0 0 1rem 0; 
-    color: var(--color-text-900); 
+.section-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 1rem 0;
+    color: var(--color-text-900);
 }
+.section-hint { font-size: 0.8rem; font-weight: 500; color: var(--color-text-400); margin-left: 0.4rem; }
 
 .ai-reason {
     font-size: 1.05rem;
@@ -553,8 +577,12 @@ const displayOotdItems = computed(() => {
     opacity: 0; visibility: hidden; transform: translateY(8px); overflow-y: auto;
     transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
 }
-.mask-interactive:hover .mask-detail,
+/* 모바일(탭): expanded 클래스로만 노출 */
 .mask-interactive.expanded .mask-detail { opacity: 1; visibility: visible; transform: translateY(0); }
+/* PC(호버 가능 기기): 마우스 오버로 노출 */
+@media (hover: hover) {
+    .mask-interactive:hover .mask-detail { opacity: 1; visibility: visible; transform: translateY(0); }
+}
 .mask-detail-header { color: #fff; font-weight: 700; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
 .mask-detail-header.bg-good { background: #10B981; }
 .mask-detail-header.bg-normal { background: var(--color-amber-500); }
@@ -579,10 +607,24 @@ const displayOotdItems = computed(() => {
 
 /* 클릭 가능한 시간별 카드 */
 .hourly-item { cursor: pointer; transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s; }
-.hourly-item:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
 .hourly-item:focus-visible { outline: 2px solid var(--color-amber-500); outline-offset: 2px; }
 .hourly-item.active-now { background-color: #FFFBEB; border-color: var(--color-amber-500); }
 .hourly-item.active-now .hour-time, .hourly-item.active-now .hour-temp { color: var(--color-amber-600); font-weight: 700; }
+@media (hover: hover) {
+    .hourly-item:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
+}
+
+/* 선택한 시간 예측 상세 패널 */
+.hour-detail { margin-top: 1rem; padding: 1rem 1.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.hd-head { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.hd-icon { font-size: 2.2rem; line-height: 1; }
+.hd-headtext { display: flex; flex-direction: column; }
+.hd-time { font-weight: 700; color: var(--color-text-900); }
+.hd-sky { font-size: 0.85rem; color: var(--color-text-600); }
+.hd-stats { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+.hd-stat { display: flex; flex-direction: column; align-items: center; min-width: 48px; }
+.hd-label { font-size: 0.72rem; color: var(--color-text-400); margin-bottom: 0.15rem; }
+.hd-value { font-weight: 700; color: var(--color-text-900); font-size: 0.95rem; }
 
 .air-quality-card { padding: 2rem; box-sizing: border-box; }
 .aqi-bars { display: flex; flex-direction: column; gap: 1.25rem; }
