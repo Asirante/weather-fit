@@ -86,6 +86,9 @@ export const fetchWeatherData = async (regionName) => {
         // 🌟 백엔드 변경 1: 현재 기온과 예보 기온 분리
         const currentTemp = weatherData.temp !== undefined ? Math.round(Number(weatherData.temp)) : 15;
         const tempForecast = weatherData.tempForecast || [];
+        const feelsLikeForecast = weatherData.feelsLikeForecast || [];
+        // 체감온도는 구버전 백엔드에선 없을 수 있으므로 방어적으로 처리
+        const currentFeelsLike = weatherData.feelsLike != null ? Math.round(Number(weatherData.feelsLike)) : null;
         const rainArray = weatherData.rain || [];
         const skyArray = weatherData.sky || [];
         
@@ -100,6 +103,7 @@ export const fetchWeatherData = async (regionName) => {
         currentWeather.value = {
             location: regionName,
             temp: currentTemp,
+            feelsLike: currentFeelsLike,
             pm10Status: getDustStatusText(weatherData.pm10Grade),
             pm10: weatherData.pm10 || 0,
             pm25Status: getDustStatusText(weatherData.pm25Grade),
@@ -130,6 +134,7 @@ export const fetchWeatherData = async (regionName) => {
             return {
                 time: date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true }),
                 temp: Math.round(Number(tempStr)),
+                feelsLike: feelsLikeForecast[index] != null ? Math.round(Number(feelsLikeForecast[index])) : null,
                 rain: rainArray[index] || '강수없음',
                 sky: skyArray[index] || '맑음',
                 pm25: weatherData.pm25 || 0,

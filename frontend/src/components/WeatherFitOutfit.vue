@@ -15,6 +15,7 @@
                 <span class="location">📍 {{ currentWeather.location }}</span>
                 <div class="divider"></div>
                 <span class="info-item">🌡️ 기온 <strong>{{ currentWeather.temp }}°C</strong></span>
+                <span v-if="currentWeather.feelsLike != null" class="info-item">🥵 체감 <strong>{{ currentWeather.feelsLike }}°C</strong></span>
                 <span class="info-item">💧 미세먼지 <strong>{{ currentWeather.pm10Status }}</strong></span>
                 <span class="info-item">💨 초미세먼지 <strong>{{ currentWeather.pm25Status }}</strong></span>
             </div>

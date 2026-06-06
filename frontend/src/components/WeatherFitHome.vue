@@ -58,7 +58,10 @@
                             <div class="location-header">
                                 <h2>{{ currentWeather.location }}</h2>
                             </div>
-                            <p class="temp-info">현재 기온 {{ currentWeather.temp }}°C</p>
+                            <p class="temp-info">
+                                현재 기온 {{ currentWeather.temp }}°C
+                                <span v-if="currentWeather.feelsLike != null" class="feels-like">체감 {{ currentWeather.feelsLike }}°C</span>
+                            </p>
                             <p class="dust-info">미세먼지 {{ currentWeather.pm10Status }} ({{ currentWeather.pm10 }}µg/m³)</p>
                             <p class="dust-info">초미세먼지 {{ currentWeather.pm25Status }} ({{ currentWeather.pm25 }}µg/m³)</p>                    
                         </div>
@@ -390,6 +393,7 @@ const displayOotdItems = computed(() => {
 
 .weather-emoji { font-size: 5rem; line-height: 1; }
 .temp-info { color: var(--color-text-600); margin: 0 0 0.5rem 0; }
+.feels-like { display: inline-block; margin-left: 0.5rem; padding: 0.1rem 0.5rem; background: var(--color-neutral-100); border-radius: 6px; font-size: 0.85rem; font-weight: 600; color: var(--color-amber-600); }
 .dust-info { color: var(--color-text-600); margin: 0 0 0.25rem 0; font-size: 0.9rem; }
 .time-label { color: var(--color-text-600); font-size: 0.75rem; margin-bottom: 0.5rem; text-align: center; white-space: nowrap;}
 .time-value { color: var(--color-text-600); font-size: 0.75rem; text-align: center; white-space: nowrap; }
