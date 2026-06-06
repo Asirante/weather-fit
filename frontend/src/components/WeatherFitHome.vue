@@ -63,7 +63,8 @@
                                 <span v-if="currentWeather.feelsLike != null" class="feels-like">체감 {{ currentWeather.feelsLike }}°C</span>
                             </p>
                             <p class="dust-info">미세먼지 {{ currentWeather.pm10Status }} ({{ currentWeather.pm10 }}µg/m³)</p>
-                            <p class="dust-info">초미세먼지 {{ currentWeather.pm25Status }} ({{ currentWeather.pm25 }}µg/m³)</p>                    
+                            <p class="dust-info">초미세먼지 {{ currentWeather.pm25Status }} ({{ currentWeather.pm25 }}µg/m³)</p>
+                            <p v-if="currentWeather.uvLevel" class="dust-info">자외선 {{ currentWeather.uvLevel }} ({{ currentWeather.uv }})</p>
                         </div>
                     </div>
                     
@@ -103,6 +104,7 @@
                             <div class="hour-time">{{ hour.time }}</div>
                             <div class="hour-icon-ph" role="img" :aria-label="getWeatherLabel(hour.rain, hour.sky)">{{ getWeatherIcon(hour.rain, hour.sky) }}</div>
                             <div class="hour-temp">{{ hour.temp }}°C</div>
+                            <div v-if="hour.feelsLike != null" class="hour-feels">체감 {{ hour.feelsLike }}°C</div>
                         </div>
                     </div>
                 </section>
@@ -250,10 +252,17 @@ const displayOotdItems = computed(() => {
 
     if (!weather || !outfit) return [];
 
+    // 소지품: pack(우산 등) + acc(액세서리) 합쳐서 표시
+    const acc = currentOutfit.value?.acc || [];
+    const packParts = [];
+    if (outfit.pack && outfit.pack !== '불필요') packParts.push(outfit.pack);
+    packParts.push(...acc);
+    const packName = packParts.length > 0 ? packParts.join(', ') : '없음';
+
     return [
         { id: 1, type: getTopIcon(outfit.top), name: outfit.top, description: '추천 상의' },
         { id: 2, type: getBottomIcon(outfit.bottom), name: outfit.bottom, description: '추천 하의' },
-        { id: 3, type: getPackIcon(outfit.pack, weather.sky), name: outfit.pack === '불필요' ? '없음' : outfit.pack, description: '추천 소지품' },
+        { id: 3, type: getPackIcon(outfit.pack, weather.sky), name: packName, description: '추천 소지품' },
         { id: 4, type: '😷', name: outfit.mask === '마스크 선택' ? '자유' : outfit.mask, description: '마스크 추천' }
     ];
 });
@@ -456,6 +465,7 @@ const displayOotdItems = computed(() => {
 .hour-time { font-size: 0.9rem; color: var(--color-text-900); margin-bottom: 1.5rem; }
 .hour-icon-ph { color: var(--color-text-400); font-size: 2.5rem; margin-bottom: 1.5rem; }
 .hour-temp { font-weight: 600; font-size: 1.1rem; color: var(--color-text-900); }
+.hour-feels { font-size: 0.75rem; color: var(--color-amber-600); margin-top: 0.35rem; }
 
 .air-quality-card { padding: 2rem; box-sizing: border-box; }
 .aqi-bars { display: flex; flex-direction: column; gap: 1.25rem; }
