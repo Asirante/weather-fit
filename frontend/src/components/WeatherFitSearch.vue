@@ -313,11 +313,11 @@
     .delete-btn { background: none; border: none; color: var(--color-text-400); font-size: 1.1rem; cursor: pointer; padding: 0.2rem 0.5rem; transition: color 0.2s; }
     .delete-btn:hover { color: var(--color-red-500); }
     .map-section { position: relative; background: white; border-radius: 12px; border: 1px solid var(--color-neutral-200); overflow: hidden; }
-    .map-container { width: 100%; height: 100%; min-height: 550px; }
+    .map-container { width: 100%; height: 100%; min-height: 550px; pointer-events: auto;}
     .map-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 550px; background-color: var(--color-neutral-50, #f8fafc); color: var(--color-text-600, #475569); font-weight: 600; font-size: 1.1rem; gap: 1.5rem; }
     .spinner { width: 50px; height: 50px; border: 5px solid var(--color-neutral-200, #e2e8f0); border-top: 5px solid var(--color-amber-500, #f59e0b); border-radius: 50%; animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .bottom-weather-panel { position: absolute; bottom: 20px; left: 20px; right: 20px; z-index: 10; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 16px; padding: 1.5rem 2rem; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); min-height: 115px; display: flex; align-items: center; box-sizing: border-box; }
+    .bottom-weather-panel { position: absolute; bottom: 20px; left: 20px; right: 20px; z-index: 10; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 16px; padding: 1.5rem 2rem; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); min-height: 115px; display: flex; align-items: center; box-sizing: border-box; pointer-events: auto;}
     .weather-content { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 2rem; }
     .weather-data-box { display: flex; align-items: center; gap: 3rem; flex: 1; }
     .weather-data-box.unsupported { gap: 2rem; }
@@ -343,4 +343,59 @@
     .action-btn:hover { transform: scale(1.05); }
     .slide-up-enter-active, .slide-up-leave-active { transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
     .slide-up-enter-from, .slide-up-leave-to { transform: translateY(40px); opacity: 0; }
+
+    /* --------------------------------------------------------------------------
+       모바일 화면 대응 (768px 이하)
+    -------------------------------------------------------------------------- */
+    @media screen and (max-width: 768px) {
+        /* 1. 검색 패널과 지도 상하 분리 */
+        .search-layout {
+            display: flex;
+            flex-direction: column;
+            margin: 1rem auto;
+            padding: 0 1rem;
+        }
+
+        .left-panel {
+            width: 100%;
+        }
+
+        /* 2. 지도 영역 모바일에 맞게 축소 */
+        .map-container, 
+        .map-placeholder {
+            min-height: 400px;
+        }
+
+        #kakao-map, .map-container {
+            width: 100%; 
+            height: 100%; 
+            touch-action: none;
+        }
+
+        /* 3. 하단 바텀 시트 형태의 날씨 정보창 재정렬 */
+        .bottom-weather-panel {
+            padding: 1rem;
+        }
+
+        .weather-content {
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .weather-data-box {
+            flex-direction: column;
+            gap: 0.8rem;
+            text-align: center;
+        }
+
+        .location-group, 
+        .data-group {
+            justify-content: center;
+        }
+
+        .action-btn {
+            width: 100%;
+            padding: 1rem;
+        }
+    }
 </style>
