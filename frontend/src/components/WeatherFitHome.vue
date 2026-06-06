@@ -83,7 +83,7 @@
                     <h3 class="section-title">OOTD ({{ hourlyData[0]?.time }} 기준)</h3>
                     
                     <p v-if="currentOutfit?.reason" class="ai-reason">
-                        💡AI 한줄평 : {{ currentOutfit.reason }}
+                        💡 {{ currentOutfit.reason }}
                     </p>
 
                     <div class="ootd-grid">
