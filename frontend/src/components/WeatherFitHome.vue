@@ -4,14 +4,20 @@
         <p>날씨 데이터를 분석하고 있습니다...</p>
     </div>
 
-    <template v-else-if="currentWeather">
-        <main class="main-content">      
-            <div class="top-section">        
+    <div v-else-if="!currentWeather" class="status-screen error">
+        <p class="error-emoji" aria-hidden="true">🌫️</p>
+        <p>날씨 정보를 불러오지 못했습니다.</p>
+        <button class="retry-btn" @click="fetchCurrentLocationWeather">다시 시도</button>
+    </div>
+
+    <template v-else>
+        <main class="main-content">
+            <div class="top-section">
                 <section class="card current-weather-card">
-                    
+
                     <div class="weather-info-left">
                         <div class="icon-wrapper">
-                            <span class="placeholder-text">{{ getWeatherIcon(currentWeather.rain, currentWeather.sky) }}</span>                        
+                            <span class="weather-emoji" role="img" :aria-label="getWeatherLabel(currentWeather.rain, currentWeather.sky)">{{ getWeatherIcon(currentWeather.rain, currentWeather.sky) }}</span>
                         </div>
                         <div class="weather-details">
                             <div class="location-header">
@@ -43,7 +49,7 @@
 
                     <div class="ootd-grid">
                         <div v-for="item in displayOotdItems" :key="item.id" class="card ootd-item">
-                            <div class="item-icon-ph">{{ item.type }}</div>
+                            <div class="item-icon-ph" role="img" :aria-label="item.description">{{ item.type }}</div>
                             <div class="item-desc">{{ item.description }}</div>
                             <div class="item-name">{{ item.name }}</div>
                         </div>
@@ -57,7 +63,7 @@
                     <div class="hourly-flex">
                         <div v-for="hour in hourlyData" :key="hour.time" class="card hourly-item">
                             <div class="hour-time">{{ hour.time }}</div>
-                            <div class="hour-icon-ph">{{ getWeatherIcon(hour.rain, hour.sky) }}</div>
+                            <div class="hour-icon-ph" role="img" :aria-label="getWeatherLabel(hour.rain, hour.sky)">{{ getWeatherIcon(hour.rain, hour.sky) }}</div>
                             <div class="hour-temp">{{ hour.temp }}°C</div>
                         </div>
                     </div>
@@ -87,6 +93,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { searchHistory } from '../stores/usehistory';
 import { currentWeather, currentOutfit, hourlyData, hourlyOutfitData, fetchWeatherData, isLoading } from '../stores/useWeather';
+import { getWeatherIcon, getWeatherLabel, getTopIcon, getBottomIcon, getPackIcon } from '../utils/weather';
 
 const route = useRoute();
 const router = useRouter();
@@ -205,55 +212,27 @@ const displayOotdItems = computed(() => {
 
     if (!weather || !outfit) return [];
 
-    let topIcon = '👕';
-    if (outfit.top.includes('긴팔')) topIcon = '👔';
-    else if (outfit.top.includes('재킷') || outfit.top.includes('가죽') || outfit.top.includes('야상')) topIcon = '🧥';
-    else if (outfit.top.includes('패딩') || outfit.top.includes('코트')) topIcon = '🧣';
-
-    let bottomIcon = outfit.bottom.includes('반바지') || outfit.bottom.includes('치마') ? '🩳' : '👖';
-
-    let packIcon = '✋';
-    if (outfit.pack.includes('우산')) packIcon = '☔';
-    else if (weather.sky?.includes('눈')) packIcon = '🌨️';
-
     return [
-        { id: 1, type: topIcon, name: outfit.top, description: '추천 상의' },
-        { id: 2, type: bottomIcon, name: outfit.bottom, description: '추천 하의' },
-        { id: 3, type: packIcon, name: outfit.pack === '불필요' ? '없음' : outfit.pack, description: '추천 소지품' },
+        { id: 1, type: getTopIcon(outfit.top), name: outfit.top, description: '추천 상의' },
+        { id: 2, type: getBottomIcon(outfit.bottom), name: outfit.bottom, description: '추천 하의' },
+        { id: 3, type: getPackIcon(outfit.pack, weather.sky), name: outfit.pack === '불필요' ? '없음' : outfit.pack, description: '추천 소지품' },
         { id: 4, type: '😷', name: outfit.mask === '마스크 선택' ? '자유' : outfit.mask, description: '마스크 추천' }
     ];
 });
-
-const getWeatherIcon = (rain, sky) => {
-    if(!sky) return '🌤️'; 
-    if (rain === '강수없음') {
-        if (sky === '맑음') return '☀️';
-        if (sky === '흐림') return '⛅';
-    } else {
-        if (sky.includes('비')) return '🌧️';
-        if (sky.includes('눈')) return '🌨️';
-        if (sky.includes('흐림')) return '⛅';
-    }
-    return '🌤️';
-};
 </script>
 
 <style scoped>
-/* 🌟 우측 삐져나가는 여백 원천 차단 */
 .main-content {
-    max-width: 1200px !important;
-    width: 100% !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-    box-sizing: border-box !important;
-    margin-top: 3rem !important;
-    margin-bottom: 2rem !important;
+    max-width: 1200px;
+    width: 100%;
+    margin: 3rem auto 2rem auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 2rem;
-    overflow-x: hidden; /* 가로 스크롤 바 완벽 제거 */
+    overflow-x: hidden; /* 가로 스크롤 바 제거 */
 }
 
 .card { 
@@ -374,13 +353,19 @@ const getWeatherIcon = (rain, sky) => {
     box-sizing: border-box;
 }
 
-.placeholder-text { color: var(--color-text-400); font-size: 5rem; }
+.weather-emoji { font-size: 5rem; line-height: 1; }
 .temp-info { color: var(--color-text-600); margin: 0 0 0.5rem 0; }
 .dust-info { color: var(--color-text-600); margin: 0 0 0.25rem 0; font-size: 0.9rem; }
 .time-label { color: var(--color-text-600); font-size: 0.75rem; margin-bottom: 0.5rem; text-align: center; white-space: nowrap;}
 .time-value { color: var(--color-text-600); font-size: 0.75rem; text-align: center; white-space: nowrap; }
 
-.loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; color: var(--color-text-600); font-weight: 600; font-size: 1.1rem; gap: 1.5rem; }
+.loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; color: var(--color-text-600); font-weight: 600; font-size: 1.1rem; gap: 1.5rem; }
+
+/* 에러 / 데이터 없음 상태 */
+.status-screen.error { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; gap: 1rem; color: var(--color-text-600); font-weight: 600; font-size: 1.1rem; text-align: center; padding: 1rem; }
+.status-screen.error .error-emoji { font-size: 3.5rem; margin: 0; }
+.retry-btn { margin-top: 0.5rem; background-color: var(--color-amber-600); color: #fff; border: none; padding: 0.7rem 1.8rem; border-radius: 2rem; font-weight: 700; font-size: 1rem; cursor: pointer; transition: background-color 0.2s; min-height: 44px; }
+.retry-btn:hover { background-color: var(--color-amber-500); }
 .spinner { width: 50px; height: 50px; border: 5px solid var(--color-neutral-200); border-top: 5px solid var(--color-amber-500); border-radius: 50%; animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 

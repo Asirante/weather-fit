@@ -3,22 +3,33 @@
         <aside class="left-panel">
             <div class="search-box-container">
                 <div class="search-input-wrapper">
-                    <span class="search-icon">🔍</span>
-                    <input 
-                        type="text" 
-                        v-model="searchQuery" 
-                        @input="handleInput" 
-                        @keyup.enter="searchAddress(null)" 
-                        placeholder="행정동 명 입력" 
+                    <span class="search-icon" aria-hidden="true">🔍</span>
+                    <input
+                        type="text"
+                        v-model="searchQuery"
+                        @input="handleInput"
+                        @keydown.down.prevent="moveActive(1)"
+                        @keydown.up.prevent="moveActive(-1)"
+                        @keydown.enter.prevent="onEnter"
+                        @keydown.esc="showAutoComplete = false"
+                        placeholder="행정동 명 입력"
                         class="search-input"
+                        role="combobox"
+                        aria-controls="autocomplete-list"
+                        aria-autocomplete="list"
+                        :aria-expanded="showAutoComplete && filteredLocations.length > 0"
                     />
-            
-                    <ul v-if="showAutoComplete && filteredLocations.length > 0" class="autocomplete-list">
-                        <li 
-                            v-for="(loc, index) in filteredLocations" 
+
+                    <ul v-if="showAutoComplete && filteredLocations.length > 0" id="autocomplete-list" class="autocomplete-list" role="listbox">
+                        <li
+                            v-for="(loc, index) in filteredLocations"
                             :key="index"
                             @click="selectLocation(loc)"
+                            @mouseenter="activeIndex = index"
                             class="autocomplete-item"
+                            :class="{ active: index === activeIndex }"
+                            role="option"
+                            :aria-selected="index === activeIndex"
                         >
                             {{ loc }}
                         </li>
@@ -26,6 +37,8 @@
                 </div>
                 <button @click="searchAddress(null)" class="search-submit-btn">검색</button>
             </div>
+
+            <p v-if="searchError" class="search-error" role="alert">{{ searchError }}</p>
 
             <div class="search-results-container">
                 <h2 class="results-title">최근 검색 기록</h2>
@@ -42,7 +55,7 @@
                         @click="clickHistory(history)"
                     >
                         <h3 class="result-name">🕒 {{ history }}</h3>
-                        <button class="delete-btn" @click.stop="removeHistory(index)" title="기록 삭제">✕</button>
+                        <button class="delete-btn" @click.stop="removeHistory(index)" title="기록 삭제" aria-label="검색 기록 삭제">✕</button>
                     </div>
                 </div>
             </div>
@@ -58,8 +71,13 @@
 
             <transition name="slide-up">
                 <div v-if="showBottomPanel" class="bottom-weather-panel">
-                    <div class="weather-content">
-                        
+                    <div v-if="isLoading" class="panel-loading">
+                        <div class="spinner small"></div>
+                        <span>날씨 정보를 불러오는 중...</span>
+                    </div>
+
+                    <div v-else class="weather-content">
+
                         <div v-if="isUnsupported" class="weather-data-box unsupported">
                             <div class="info-group location-group">
                                 <span class="label">선택 지역</span>
@@ -84,7 +102,7 @@
                             
                             <div class="info-group data-group">
                                 <div class="temp-display">
-                                    <span class="icon">{{ getWeatherIcon(currentWeather.rain, currentWeather.sky) }}</span>
+                                    <span class="icon" role="img" :aria-label="getWeatherLabel(currentWeather.rain, currentWeather.sky)">{{ getWeatherIcon(currentWeather.rain, currentWeather.sky) }}</span>
                                     <span class="degree">{{ currentWeather.temp }}°C</span>
                                 </div>
                                 <div class="divider"></div>
@@ -97,7 +115,7 @@
                             </div>
                         </div>
 
-                        <button class="action-btn" @click="goToHome">
+                        <button class="action-btn" @click="goToOutfit">
                             복장지표 확인 👕
                         </button>
                     </div>
@@ -111,17 +129,22 @@
     import { ref, computed, onMounted } from 'vue';
     import { useRouter } from 'vue-router';
     import { searchHistory, addToHistory } from '../stores/usehistory';
-    import { currentWeather, fetchWeatherData, errorMessage } from '../stores/useWeather';
+    import { currentWeather, fetchWeatherData, errorMessage, isLoading } from '../stores/useWeather';
+    import { getWeatherIcon, getWeatherLabel } from '../utils/weather';
 
     const router = useRouter();
 
+    const MAX_SUGGESTIONS = 10; // 자동완성 렌더링 항목 수 제한 (성능)
+
     const searchQuery = ref('');
     const showAutoComplete = ref(false);
-    const sggData = ref([]); 
-    const isUnsupported = ref(false); 
-    const lastAttemptedRegion = ref(''); 
+    const activeIndex = ref(-1);     // 키보드로 선택 중인 자동완성 항목
+    const searchError = ref('');     // alert 대신 인라인 에러 메시지
+    const sggData = ref([]);
+    const isUnsupported = ref(false);
+    const lastAttemptedRegion = ref('');
     const showBottomPanel = ref(false);
-    
+
     const isMapLoaded = ref(false);
     let map = null;
     let marker = null;
@@ -132,7 +155,10 @@
         if (!searchQuery.value) return [];
         const query = searchQuery.value.toLowerCase();
         const names = sggData.value.map(f => f.properties.adm_nm);
-        return [...new Set(names)].filter(name => name.includes(query));
+        // 중복 제거 후 최대 MAX_SUGGESTIONS개만 노출 (전국 동 전체 렌더링 방지)
+        return [...new Set(names)]
+            .filter(name => name.toLowerCase().includes(query))
+            .slice(0, MAX_SUGGESTIONS);
     });
 
     onMounted(async () => {
@@ -194,13 +220,36 @@
         }
     };
 
-    const handleInput = () => { 
-        showAutoComplete.value = searchQuery.value.length > 0; 
+    const handleInput = () => {
+        showAutoComplete.value = searchQuery.value.length > 0;
+        activeIndex.value = -1;
+        searchError.value = '';
+    };
+
+    // 자동완성 키보드 탐색 (방향키)
+    const moveActive = (dir) => {
+        const list = filteredLocations.value;
+        if (!showAutoComplete.value || list.length === 0) return;
+        const next = activeIndex.value + dir;
+        if (next < 0) activeIndex.value = list.length - 1;
+        else if (next >= list.length) activeIndex.value = 0;
+        else activeIndex.value = next;
+    };
+
+    // Enter: 자동완성 항목이 선택되어 있으면 그것을, 아니면 입력값으로 검색
+    const onEnter = () => {
+        const list = filteredLocations.value;
+        if (showAutoComplete.value && activeIndex.value >= 0 && list[activeIndex.value]) {
+            selectLocation(list[activeIndex.value]);
+        } else {
+            searchAddress(null);
+        }
     };
 
     const selectLocation = (location) => {
         searchQuery.value = location;
         showAutoComplete.value = false;
+        activeIndex.value = -1;
         searchAddress(location);
     };
 
@@ -209,34 +258,38 @@
         if (!inputKeyword || !geocoder) return;
 
         const targetFeature = sggData.value.find(f => f.properties.adm_nm.includes(inputKeyword));
-        
+
         if (!targetFeature) {
-            alert('정확한 행정동명을 입력해주세요.');
+            // 네이티브 alert 대신 입력창 하단 인라인 메시지로 안내
+            searchError.value = '정확한 행정동명을 입력해주세요.';
             return;
         }
 
+        searchError.value = '';
         const officialName = targetFeature.properties.adm_nm;
-        
+
         lastAttemptedRegion.value = officialName;
-        showBottomPanel.value = false;
+        showAutoComplete.value = false;
 
         geocoder.addressSearch(officialName, async (result, status) => {
             if (status === window.kakao.maps.services.Status.OK) {
                 const coords = new window.kakao.maps.LatLng(result[0].y, result[0].x);
-                
+
                 clearMapGraphics();
                 map.setCenter(coords);
                 marker = new window.kakao.maps.Marker({ position: coords, map: map });
-                drawSggPolygon(targetFeature); 
-                
+                drawSggPolygon(targetFeature);
+
+                // 패널을 먼저 열어 로딩 상태를 보여준다 (fetch 동안 빈 화면 방지)
+                showBottomPanel.value = true;
+
                 await fetchWeatherData(officialName);
                 isUnsupported.value = !!errorMessage.value || (currentWeather.value?.location.includes('지원하지 않'));
 
                 searchQuery.value = officialName;
-                showAutoComplete.value = false;
-                
                 addToHistory(officialName);
-                showBottomPanel.value = true;
+            } else {
+                searchError.value = '지도에서 위치를 찾을 수 없습니다.';
             }
         });
     };
@@ -250,13 +303,12 @@
     };
 
     // 🌟 요구사항 1 반영: 검색 결과 들고 홈('/')으로 이동
-    const goToHome = () => {
-        if (isUnsupported.value) {
-            alert('현재 지원하지 않는 지역입니다.\n홈 화면 이동 시 [인천광역시 남동구 구월3동] 데이터로 안내됩니다.');
-        }
+    // 라벨('복장지표 확인')에 맞춰 복장지표(/outfit) 페이지로 이동
+    const goToOutfit = () => {
+        // 미지원 지역은 패널에 이미 경고가 표시되므로 별도 alert 없이 기본 지역으로 안내
         const regionToPass = isUnsupported.value ? '인천광역시 남동구 구월3동' : currentWeather.value.location;
-        addToHistory(regionToPass); 
-        router.push({ path: '/', query: { region: regionToPass } });
+        addToHistory(regionToPass);
+        router.push({ path: '/outfit', query: { region: regionToPass } });
     };
 
     const getDustClass = (status) => {
@@ -277,22 +329,6 @@
         }
         return { city: location, district: '' };
     };
-
-    const getWeatherIcon = (rain, sky) => {
-        if (!sky) return '🌤️'; 
-        switch (rain) {
-            case '강수없음': 
-                if (sky === '맑음') return '☀️';
-                if (sky === '흐림') return '⛅';
-                break;
-            default:
-                if (sky.includes('비')) return '🌧️';
-                if (sky.includes('눈')) return '🌨️';
-                if (sky.includes('흐림')) return '⛅';
-                break;
-        }
-        return '🌤️';
-    };
 </script>
 
 <style scoped>
@@ -305,12 +341,14 @@
     .search-submit-btn { background-color: var(--color-red-500); color: #FFFFFF; border: none; border-radius: 8px; padding: 0 1.5rem; font-weight: 600; font-size: 1rem; cursor: pointer; white-space: nowrap; height: 100%; box-sizing: border-box; }
     .autocomplete-list { position: absolute; top: calc(100% + 8px); left: 0; width: 100%; background: #FFFFFF; border: 1px solid var(--color-neutral-200); border-radius: 8px; margin: 0; padding: 0; list-style-type: none !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 999; max-height: 250px; overflow-y: auto; }
     .autocomplete-item { padding: 0.8rem 1.2rem; cursor: pointer; border-bottom: 1px solid var(--color-neutral-100); font-size: 0.95rem; color: var(--color-text-900); text-align: left; }
+    .autocomplete-item.active { background-color: var(--color-neutral-100); }
+    .search-error { color: var(--color-red-500); font-size: 0.85rem; font-weight: 600; margin: -0.5rem 0 0 0.2rem; }
     .search-results-container { background: #FFFFFF; border-radius: 12px; border: 1px solid var(--color-neutral-200); padding: 1.5rem; flex: 1; }
     .empty-history { color: var(--color-text-400); text-align: center; margin-top: 2rem; }
     .result-card { border: 1px solid var(--color-neutral-200); border-radius: 8px; padding: 1rem; margin-top: 0.5rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: background-color 0.2s; }
     .result-card:hover { background-color: var(--color-neutral-50); }
     .result-name { font-size: 1.05rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-900); flex: 1; }
-    .delete-btn { background: none; border: none; color: var(--color-text-400); font-size: 1.1rem; cursor: pointer; padding: 0.2rem 0.5rem; transition: color 0.2s; }
+    .delete-btn { background: none; border: none; color: var(--color-text-400); font-size: 1.1rem; cursor: pointer; padding: 0.2rem 0.5rem; transition: color 0.2s; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .delete-btn:hover { color: var(--color-red-500); }
     .map-section { position: relative; background: white; border-radius: 12px; border: 1px solid var(--color-neutral-200); overflow: hidden; }
     .map-container { width: 100%; height: 100%; min-height: 550px; pointer-events: auto;}
@@ -319,6 +357,8 @@
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     .bottom-weather-panel { position: absolute; bottom: 20px; left: 20px; right: 20px; z-index: 10; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 16px; padding: 1.5rem 2rem; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); min-height: 115px; display: flex; align-items: center; box-sizing: border-box; pointer-events: auto;}
     .weather-content { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 2rem; }
+    .panel-loading { display: flex; align-items: center; justify-content: center; gap: 0.8rem; width: 100%; color: var(--color-text-600); font-weight: 600; font-size: 0.95rem; }
+    .spinner.small { width: 24px; height: 24px; border-width: 3px; }
     .weather-data-box { display: flex; align-items: center; gap: 3rem; flex: 1; }
     .weather-data-box.unsupported { gap: 2rem; }
     .unsupported-msg-box { display: flex; flex-direction: column; justify-content: center; gap: 0.4rem; flex: 1; }
