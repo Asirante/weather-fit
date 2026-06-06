@@ -27,6 +27,8 @@ jobs:
           role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
           aws-region: us-east-1
       - name: Install & Build
+        env:
+          VUE_APP_KAKAO_API_KEY: ${{ secrets.KAKAO_API_KEY }}
         run: |
           cd frontend
           npm install
