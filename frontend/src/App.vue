@@ -6,7 +6,7 @@
         <nav class="nav-menu">
           <button @click="goTo('/')" :class="route.path === '/' ? 'nav-button accent-btn' : 'nav-text-btn'">홈</button>
           <button @click="goTo('/search')" :class="route.path === '/search' ? 'nav-button accent-btn' : 'nav-text-btn'">지역검색</button>
-          <!-- <button @click="goTo('/outfit')" :class="route.path === '/outfit' ? 'nav-button accent-btn' : 'nav-text-btn'">복장지표</button> -->
+          <button @click="goTo('/outfit')" :class="route.path === '/outfit' ? 'nav-button accent-btn' : 'nav-text-btn'">복장지표</button>
         </nav>
       </div>
     </header>
@@ -39,6 +39,13 @@
     padding: 0;
     box-sizing: border-box;
   }
+
+  /* 키보드 사용자를 위한 공통 포커스 링 (마우스 클릭 시에는 표시 안 함) */
+  :focus-visible {
+    outline: 2px solid #F59E0B;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 </style>
 
 <style scoped>
@@ -56,9 +63,10 @@
     --color-text-600: #475569;
     --color-text-400: #94A3B8;
 
-    font-family: 'Pretendard', -apple-system, sans-serif;
+    font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     background-color: var(--color-neutral-100);
     min-height: 100vh;
+    min-height: 100dvh; /* 모바일 주소창 영역까지 고려한 동적 뷰포트 높이 */
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -125,7 +133,8 @@
   /* 푸터 스타일 */
   .footer {
     background-color: var(--color-navy-900);
-    color: var(--color-text-400);
+    /* 네이비 배경 대비 가독성 확보 (기존 #94A3B8은 대비 부족) */
+    color: #CBD5E1;
     text-align: center;
     padding: 1.5rem;
     font-size: 0.875rem;
@@ -133,6 +142,34 @@
     flex-shrink: 0;
     margin-top: auto;
     box-sizing: border-box;
+  }
+
+  /* --------------------------------------------------------------------------
+     📱 모바일 헤더/푸터 대응 (768px 이하)
+  -------------------------------------------------------------------------- */
+  @media screen and (max-width: 768px) {
+    .header {
+      padding: 0 1rem;
+      height: 60px;
+      min-height: 60px;
+    }
+
+    .logo { font-size: 1.4rem; }
+
+    .nav-menu { gap: 1rem; }
+
+    .nav-button.accent-btn {
+      padding: 0.45rem 1.1rem;
+      font-size: 0.95rem;
+    }
+
+    .nav-text-btn { font-size: 0.95rem; }
+
+    .footer {
+      padding: 1.25rem 1rem;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
   }
 
 </style>

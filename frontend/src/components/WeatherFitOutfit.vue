@@ -15,6 +15,7 @@
                 <span class="location">📍 {{ currentWeather.location }}</span>
                 <div class="divider"></div>
                 <span class="info-item">🌡️ 기온 <strong>{{ currentWeather.temp }}°C</strong></span>
+                <span v-if="currentWeather.feelsLike != null" class="info-item">🥵 체감 <strong>{{ currentWeather.feelsLike }}°C</strong></span>
                 <span class="info-item">💧 미세먼지 <strong>{{ currentWeather.pm10Status }}</strong></span>
                 <span class="info-item">💨 초미세먼지 <strong>{{ currentWeather.pm25Status }}</strong></span>
             </div>
@@ -59,7 +60,7 @@
                         </template>
 
                         <template v-else>
-                            <div class="icon-placeholder">
+                            <div class="icon-placeholder" role="img" :aria-label="item.description">
                                 {{ item.type }}
                             </div>
                             <p class="item-desc">{{ item.description }}</p>
@@ -73,16 +74,20 @@
                 <h2 class="section-title">시간별 예보 (클릭하여 복장 확인)</h2>
                 
                 <div class="hourly-grid">
-                    <div 
-                        v-for="(data, index) in hourlyData" 
-                        :key="data.time" 
+                    <div
+                        v-for="(data, index) in hourlyData"
+                        :key="data.time"
                         class="hourly-card"
                         :class="{ 'active-now': selectedHourIndex === index }"
                         @click="selectHour(index)"
+                        @keydown.enter.prevent="selectHour(index)"
+                        @keydown.space.prevent="selectHour(index)"
                         role="button"
+                        tabindex="0"
+                        :aria-pressed="selectedHourIndex === index"
                     >
                         <div class="time">{{ data.time }} {{ index === 0 ? '(지금)' : '' }}</div>
-                        <div class="icon-placeholder small">{{ getWeatherIcon(data.rain, data.sky) }}</div>
+                        <div class="icon-placeholder small" role="img" :aria-label="getWeatherLabel(data.rain, data.sky)">{{ getWeatherIcon(data.rain, data.sky) }}</div>
                         <div class="temp">{{ data.temp }}°C</div>
                     </div>
                 </div>
@@ -93,9 +98,10 @@
 
 <script setup>
     import { ref, computed, onMounted } from 'vue';
-    import { useRoute } from 'vue-router'; 
-    import { searchHistory } from '../stores/usehistory'; 
+    import { useRoute } from 'vue-router';
+    import { searchHistory } from '../stores/usehistory';
     import { currentWeather, hourlyData, hourlyOutfitData, isLoading, errorMessage, fetchWeatherData } from '../stores/useWeather';
+    import { getWeatherIcon, getWeatherLabel, getTopIcon, getBottomIcon, getPackIcon } from '../utils/weather';
 
     const route = useRoute();
 
@@ -133,21 +139,10 @@
 
         if (!weather || !outfit) return [];
 
-        let topIcon = '👕';
-        if (outfit.top.includes('재킷') || outfit.top.includes('가죽') || outfit.top.includes('야상')) topIcon = '🧥';
-        else if (outfit.top.includes('패딩') || outfit.top.includes('코트')) topIcon = '🧣';
-        else if (outfit.top.includes('긴팔') || outfit.top.includes('니트') || outfit.top.includes('가디건') || outfit.top.includes('맨투맨')) topIcon = '👔';
-
-        let bottomIcon = (outfit.bottom.includes('반바지')) ? '🩳' : (outfit.bottom.includes('청바지')) ? '👖' : '🧣';
-
-        let packIcon = '✋';
-        if (outfit.pack.includes('우산')) packIcon = '🌂';
-        else if (weather.sky?.includes('눈')) packIcon = '🌂';
-
         return [
-            { id: 1, type: topIcon, name: outfit.top, description: '추천 상의' },
-            { id: 2, type: bottomIcon, name: outfit.bottom, description: '추천 하의' },
-            { id: 3, type: packIcon, name: outfit.pack === '불필요' ? '없음' : outfit.pack, description: '추천 소지품' },
+            { id: 1, type: getTopIcon(outfit.top), name: outfit.top, description: '추천 상의' },
+            { id: 2, type: getBottomIcon(outfit.bottom), name: outfit.bottom, description: '추천 하의' },
+            { id: 3, type: getPackIcon(outfit.pack, weather.sky), name: outfit.pack === '불필요' ? '없음' : outfit.pack, description: '추천 소지품' },
             { id: 4, type: '마스크', name: outfit.mask === '마스크 선택' ? '자유' : outfit.mask, description: '식약처 인증 마스크' }
         ];
     });
@@ -172,19 +167,6 @@
         if (status === '좋음') return 'bg-good';
         if (status === '보통' || status === '정보없음') return 'bg-normal';
         return 'bg-bad';
-    };
-
-    const getWeatherIcon = (rain, sky) => {
-        if(!sky) return '🌤️'; 
-        if (rain === '강수없음') {
-            if (sky === '맑음') return '☀️';
-            if (sky === '흐림') return '⛅';
-        } else {
-            if (sky.includes('비')) return '🌧️';
-            if (sky.includes('눈')) return '🌨️';
-            if (sky.includes('흐림')) return '⛅';
-        }
-        return '🌤️';
     };
 </script>
 
@@ -233,7 +215,9 @@
     -------------------------------------------------------------------------- */
     .outfit-main-content {
         background-color: var(--color-neutral-50);
-        min-height: calc(100vh - 60px); 
+        /* 헤더 높이(72px) 보정 + 모바일 동적 뷰포트 대응 */
+        min-height: calc(100vh - 72px);
+        min-height: calc(100dvh - 72px);
         padding-bottom: 4rem;
     }
 
@@ -390,5 +374,51 @@
     .hourly-card.active-now .temp {
         color: var(--color-amber-600);
         font-weight: 700;
+    }
+
+    /* --------------------------------------------------------------------------
+       📱 모바일 화면 대응 (768px 이하) — 이전엔 미디어쿼리가 없어 6열이 찌그러짐
+    -------------------------------------------------------------------------- */
+    @media screen and (max-width: 768px) {
+        .outfit-main-content {
+            min-height: calc(100vh - 60px);
+            min-height: calc(100dvh - 60px);
+        }
+
+        /* 요약 바: 가로 넘침 대신 줄바꿈 허용 */
+        .summary-inner {
+            flex-wrap: wrap;
+            gap: 0.5rem 0.8rem;
+            font-size: 0.85rem;
+        }
+        .summary-inner .divider { display: none; }
+
+        .content-wrapper { padding: 1.5rem 1rem; }
+        .section-title { font-size: 1.2rem; margin-bottom: 1rem; }
+
+        /* OOTD: 4열 → 2열 */
+        .ootd-section { margin-bottom: 2rem; }
+        .ootd-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        .ootd-card { padding: 1.5rem 0.8rem; }
+        .icon-placeholder { width: 60px; height: 60px; font-size: 2.8rem; margin-bottom: 0.8rem; }
+
+        /* 마스크 카드는 2열에서 가로 전체 차지 */
+        .mask-card { grid-column: 1 / -1; }
+
+        /* 시간별 예보: 6열 그리드 → 가로 스크롤(스와이프) */
+        .hourly-grid {
+            display: flex;
+            gap: 0.8rem;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 0.5rem;
+        }
+        .hourly-card {
+            flex: 0 0 auto;
+            min-width: 100px;
+            scroll-snap-align: start;
+            padding: 1.2rem 0.8rem;
+        }
     }
 </style>

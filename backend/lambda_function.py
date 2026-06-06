@@ -1,4 +1,5 @@
 import json
+import math
 import boto3
 import os
 from urllib.parse import parse_qs
@@ -55,6 +56,43 @@ def safe_float(value, default=0.0):
         return float(s)
     except (ValueError, TypeError):
         return default
+
+
+def calc_apparent_temp(temp, wind_ms, humidity):
+    """기상청 기준 체감온도 계산.
+
+    - 저온(<=10도) + 바람: 풍속냉각(Wind Chill)
+    - 고온(>=25도) + 습도: 습도 기반(여름철 체감온도, 습구온도 이용)
+    - 그 외: 기온과 거의 동일하므로 기온 그대로 반환
+    풍속은 m/s, 습도는 %.
+    """
+    if temp is None:
+        return None
+
+    # 겨울철 풍속냉각 (바람 4.8km/h=약 1.3m/s 이상에서만 유의미)
+    if temp <= 10 and wind_ms is not None and wind_ms >= 1.3:
+        v = wind_ms * 3.6  # m/s -> km/h
+        v_pow = v ** 0.16
+        at = 13.12 + 0.6215 * temp - 11.37 * v_pow + 0.3965 * v_pow * temp
+        return round(at, 1)
+
+    # 여름철 습도 기반 체감온도
+    if temp >= 25 and humidity:
+        rh = humidity
+        tw = (
+            temp * math.atan(0.151977 * (rh + 8.313659) ** 0.5)
+            + math.atan(temp + rh)
+            - math.atan(rh - 1.67633)
+            + 0.00391838 * (rh ** 1.5) * math.atan(0.023101 * rh)
+            - 4.686035
+        )
+        at = (
+            -0.2442 + 0.55399 * tw + 0.45535 * temp
+            - 0.0022 * tw ** 2 + 0.00278 * tw * temp + 3.0
+        )
+        return round(at, 1)
+
+    return round(temp, 1)
 
 
 # ──────────────────────────────────────────────
@@ -488,6 +526,23 @@ def lambda_handler(event, context):
             sky_list = [
                 v["value"] for v in series.get("SKY", [])
             ]
+            reh_list = [
+                safe_float(v["value"])
+                for v in series.get("REH", [])
+            ]
+            wsd_list = [
+                safe_float(v["value"])
+                for v in series.get("WSD", [])
+            ]
+
+            # 시간대별 체감온도 (기온 배열 기준, 같은 인덱스의 습도/풍속 사용)
+            feels_like_forecast = []
+            for i, t in enumerate(temp_list):
+                wind_i = wsd_list[i] if i < len(wsd_list) else None
+                reh_i = reh_list[i] if i < len(reh_list) else 0
+                feels_like_forecast.append(
+                    calc_apparent_temp(t, wind_i, reh_i)
+                )
 
             sky_result = []
             for i in range(len(sky_list)):
@@ -509,6 +564,17 @@ def lambda_handler(event, context):
 
             current_temp = safe_float(
                 weather_map.get("T1H", {}).get("obsrValue")
+            )
+
+            # 현재(실황) 체감온도
+            current_wind = safe_float(
+                weather_map.get("WSD", {}).get("obsrValue")
+            )
+            current_reh = safe_float(
+                weather_map.get("REH", {}).get("obsrValue")
+            )
+            current_feels_like = calc_apparent_temp(
+                current_temp, current_wind, current_reh
             )
 
             uv_item = weather_map.get("UV_INDEX", {})
@@ -534,7 +600,9 @@ def lambda_handler(event, context):
                 "baseDate": base_date,
                 "baseTime": base_time,
                 "temp": current_temp,
+                "feelsLike": current_feels_like,
                 "tempForecast": temp_list,
+                "feelsLikeForecast": feels_like_forecast,
                 "rain": rain_list,
                 "sky": sky_result,
                 "uv": uv_max,
