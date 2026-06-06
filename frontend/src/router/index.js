@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import WeatherFitHome from '../components/WeatherFitHome.vue'
 import WeatherFitSearch from '../components/WeatherFitSearch.vue'
-import WeatherFitOutfit from '../components/WeatherFitOutfit.vue'
 
 const routes = [
   {
@@ -13,11 +12,6 @@ const routes = [
     path: '/search',
     name: 'search',
     component: WeatherFitSearch
-  },
-  {
-    path: '/outfit',
-    name: 'outfit',
-    component: WeatherFitOutfit
   }
 
 ];

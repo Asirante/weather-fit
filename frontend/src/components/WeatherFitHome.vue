@@ -80,28 +80,79 @@
                 </section>
 
                 <section class="ootd-section">
-                    <h3 class="section-title">OOTD ({{ hourlyData[0]?.time }} 기준)</h3>
-                    
+                    <h3 class="section-title">OOTD ({{ selectedHourlyWeather?.time }} 기준)</h3>
+
                     <p v-if="currentOutfit?.reason" class="ai-reason">
                         💡 {{ currentOutfit.reason }}
                     </p>
 
                     <div class="ootd-grid">
-                        <div v-for="item in displayOotdItems" :key="item.id" class="card ootd-item">
-                            <div class="item-icon-ph" role="img" :aria-label="item.description">{{ item.type }}</div>
-                            <div class="item-desc">{{ item.description }}</div>
-                            <div class="item-name">{{ item.name }}</div>
-                        </div>
+                        <template v-for="item in displayOotdItems" :key="item.id">
+                            <!-- 마스크: 클릭/호버로 상세가 열리는 인터랙티브 카드 -->
+                            <div
+                                v-if="item.isMask"
+                                class="card ootd-item mask-interactive"
+                                :class="[{ expanded: maskExpanded }, getMaskBorderClass(selectedHourlyWeather?.pm25Status)]"
+                                role="button"
+                                tabindex="0"
+                                :aria-expanded="maskExpanded"
+                                aria-label="마스크 추천 상세 보기"
+                                @click="maskExpanded = !maskExpanded"
+                                @keydown.enter.prevent="maskExpanded = !maskExpanded"
+                                @keydown.space.prevent="maskExpanded = !maskExpanded"
+                            >
+                                <div class="mask-front">
+                                    <div class="item-icon-ph" role="img" aria-label="마스크 추천">😷</div>
+                                    <div class="item-desc">마스크 추천</div>
+                                    <div class="item-name">{{ item.name }}</div>
+                                    <div class="mask-hint">자세히 보기 ▾</div>
+                                </div>
+                                <div class="mask-detail" :class="getMaskBorderClass(selectedHourlyWeather?.pm25Status)">
+                                    <div class="mask-detail-header" :class="getMaskBgClass(selectedHourlyWeather?.pm25Status)">😷 마스크 추천</div>
+                                    <div class="mask-detail-body">
+                                        <p class="mask-grade">
+                                            PM2.5 {{ selectedHourlyWeather?.pm25 }}㎍/㎥ →
+                                            <strong :class="getDustTextClass(selectedHourlyWeather?.pm25Status)">{{ selectedHourlyWeather?.pm25Status }}</strong>
+                                        </p>
+                                        <p class="mask-rec">{{ item.name }}</p>
+                                        <div class="badge-group">
+                                            <span class="badge">KF-AD</span>
+                                            <span class="badge">KF-80</span>
+                                            <span class="badge">KF-94</span>
+                                            <span class="badge">KF-99</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 일반 OOTD 카드 -->
+                            <div v-else class="card ootd-item">
+                                <div class="item-icon-ph" role="img" :aria-label="item.description">{{ item.type }}</div>
+                                <div class="item-desc">{{ item.description }}</div>
+                                <div class="item-name">{{ item.name }}</div>
+                            </div>
+                        </template>
                     </div>
                 </section>
             </div>
 
             <div class="bottom-section">
                 <section class="hourly-section">
-                    <h3 class="section-title">시간별 예보</h3>
+                    <h3 class="section-title">시간별 예보 (클릭하여 복장 확인)</h3>
                     <div class="hourly-flex">
-                        <div v-for="hour in hourlyData" :key="hour.time" class="card hourly-item">
-                            <div class="hour-time">{{ hour.time }}</div>
+                        <div
+                            v-for="(hour, index) in hourlyData"
+                            :key="hour.time"
+                            class="card hourly-item"
+                            :class="{ 'active-now': selectedHourIndex === index }"
+                            role="button"
+                            tabindex="0"
+                            :aria-pressed="selectedHourIndex === index"
+                            @click="selectHour(index)"
+                            @keydown.enter.prevent="selectHour(index)"
+                            @keydown.space.prevent="selectHour(index)"
+                        >
+                            <div class="hour-time">{{ hour.time }} {{ index === 0 ? '(지금)' : '' }}</div>
                             <div class="hour-icon-ph" role="img" :aria-label="getWeatherLabel(hour.rain, hour.sky)">{{ getWeatherIcon(hour.rain, hour.sky) }}</div>
                             <div class="hour-temp">{{ hour.temp }}°C</div>
                             <div v-if="hour.feelsLike != null" class="hour-feels">체감 {{ hour.feelsLike }}°C</div>
@@ -138,6 +189,35 @@ import { getWeatherIcon, getWeatherLabel, getTopIcon, getBottomIcon, getPackIcon
 const route = useRoute();
 const router = useRouter();
 const isInitializing = ref(true);
+
+// 시간별 선택 + 마스크 카드 인터랙션 상태
+const selectedHourIndex = ref(0);
+const maskExpanded = ref(false);
+
+const selectHour = (index) => {
+    selectedHourIndex.value = index;
+};
+
+const selectedHourlyWeather = computed(() => {
+    return hourlyData.value.length > 0 ? hourlyData.value[selectedHourIndex.value] : null;
+});
+
+// 마스크 카드 색상 (PM2.5 단계별)
+const getMaskBorderClass = (status) => {
+    if (status === '좋음') return 'border-good';
+    if (status === '보통' || status === '정보없음') return 'border-normal';
+    return 'border-bad';
+};
+const getMaskBgClass = (status) => {
+    if (status === '좋음') return 'bg-good';
+    if (status === '보통' || status === '정보없음') return 'bg-normal';
+    return 'bg-bad';
+};
+const getDustTextClass = (status) => {
+    if (status === '좋음') return 'text-good';
+    if (status === '보통' || status === '정보없음') return 'text-normal';
+    return 'text-bad';
+};
 
 onMounted(async () => {
     if (route.query.region) {
@@ -245,10 +325,10 @@ const aqiList = computed(() => {
     ]
 });
 
-// 🌟 쓸데없는 index 의존성 완전히 제거 (무조건 [0] 사용)
+// 선택된 시간대 기준 OOTD (시간별 예보 클릭 시 함께 갱신)
 const displayOotdItems = computed(() => {
-    const weather = hourlyData.value[0] || null;
-    const outfit = hourlyOutfitData.value?.length > 0 ? hourlyOutfitData.value[0] : null;
+    const weather = selectedHourlyWeather.value;
+    const outfit = hourlyOutfitData.value?.length > 0 ? hourlyOutfitData.value[selectedHourIndex.value] : null;
 
     if (!weather || !outfit) return [];
 
@@ -263,7 +343,7 @@ const displayOotdItems = computed(() => {
         { id: 1, type: getTopIcon(outfit.top), name: outfit.top, description: '추천 상의' },
         { id: 2, type: getBottomIcon(outfit.bottom), name: outfit.bottom, description: '추천 하의' },
         { id: 3, type: getPackIcon(outfit.pack, weather.sky), name: packName, description: '추천 소지품' },
-        { id: 4, type: '😷', name: outfit.mask === '마스크 선택' ? '자유' : outfit.mask, description: '마스크 추천' }
+        { id: 4, isMask: true, name: outfit.mask === '마스크 선택' ? '자유' : outfit.mask, description: '마스크 추천' }
     ];
 });
 </script>
@@ -453,10 +533,40 @@ const displayOotdItems = computed(() => {
 
 .ootd-section { display: flex; flex-direction: column; }
 .ootd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; width: 100%; }
-.ootd-item { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5rem 1rem; width: 100%; box-sizing: border-box; }
+.ootd-item { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5rem 1rem; width: 100%; min-height: 175px; box-sizing: border-box; }
 .item-icon-ph { font-size: 3rem; margin-bottom: 1.5rem; height: 40px; line-height: 1.4; text-align: center; }
 .item-desc { font-weight: 600; font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--color-text-900); text-align: center; }
 .item-name { color: var(--color-text-600); font-size: 0.85rem; text-align: center; }
+
+/* 인터랙티브 마스크 카드 (호버/클릭 시 상세 노출) */
+.mask-interactive { position: relative; cursor: pointer; overflow: hidden; border-width: 2px; transition: box-shadow 0.2s; }
+.mask-interactive:focus-visible { outline: 2px solid var(--color-amber-500); outline-offset: 2px; }
+.mask-interactive.border-good { border-color: #10B981; }
+.mask-interactive.border-normal { border-color: var(--color-amber-500); }
+.mask-interactive.border-bad { border-color: var(--color-red-500); }
+.mask-front { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+.mask-hint { margin-top: 0.5rem; font-size: 0.72rem; font-weight: 700; color: var(--color-text-400); }
+
+.mask-detail {
+    position: absolute; inset: 0; background: #fff; border-radius: inherit;
+    display: flex; flex-direction: column; text-align: left;
+    opacity: 0; visibility: hidden; transform: translateY(8px); overflow-y: auto;
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+}
+.mask-interactive:hover .mask-detail,
+.mask-interactive.expanded .mask-detail { opacity: 1; visibility: visible; transform: translateY(0); }
+.mask-detail-header { color: #fff; font-weight: 700; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
+.mask-detail-header.bg-good { background: #10B981; }
+.mask-detail-header.bg-normal { background: var(--color-amber-500); }
+.mask-detail-header.bg-bad { background: var(--color-red-500); }
+.mask-detail-body { padding: 0.8rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.mask-grade { margin: 0; font-size: 0.8rem; color: var(--color-text-600); }
+.mask-rec { margin: 0; font-weight: 700; font-size: 0.95rem; color: var(--color-text-900); }
+.text-good { color: #10B981; }
+.text-normal { color: var(--color-amber-500); }
+.text-bad { color: var(--color-red-500); }
+.badge-group { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.2rem; }
+.badge { background: var(--color-neutral-100); color: var(--color-text-600); font-weight: 700; font-size: 0.65rem; padding: 0.25rem 0.5rem; border-radius: 6px; }
 
 .bottom-section { display: grid; grid-template-columns: 1fr 320px; gap: 2rem; width: 100%; box-sizing: border-box; }
 .hourly-section { display: flex; flex-direction: column; min-width: 0; }
@@ -466,6 +576,13 @@ const displayOotdItems = computed(() => {
 .hour-icon-ph { color: var(--color-text-400); font-size: 2.5rem; margin-bottom: 1.5rem; }
 .hour-temp { font-weight: 600; font-size: 1.1rem; color: var(--color-text-900); }
 .hour-feels { font-size: 0.75rem; color: var(--color-amber-600); margin-top: 0.35rem; }
+
+/* 클릭 가능한 시간별 카드 */
+.hourly-item { cursor: pointer; transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s; }
+.hourly-item:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
+.hourly-item:focus-visible { outline: 2px solid var(--color-amber-500); outline-offset: 2px; }
+.hourly-item.active-now { background-color: #FFFBEB; border-color: var(--color-amber-500); }
+.hourly-item.active-now .hour-time, .hourly-item.active-now .hour-temp { color: var(--color-amber-600); font-weight: 700; }
 
 .air-quality-card { padding: 2rem; box-sizing: border-box; }
 .aqi-bars { display: flex; flex-direction: column; gap: 1.25rem; }
