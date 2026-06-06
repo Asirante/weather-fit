@@ -302,13 +302,12 @@
         searchHistory.value.splice(index, 1);
     };
 
-    // 🌟 요구사항 1 반영: 검색 결과 들고 홈('/')으로 이동
-    // 라벨('복장지표 확인')에 맞춰 복장지표(/outfit) 페이지로 이동
+    // 복장지표 기능이 홈으로 통합됨 → 검색 결과를 들고 홈('/')으로 이동
     const goToOutfit = () => {
         // 미지원 지역은 패널에 이미 경고가 표시되므로 별도 alert 없이 기본 지역으로 안내
         const regionToPass = isUnsupported.value ? '인천광역시 남동구 구월3동' : currentWeather.value.location;
         addToHistory(regionToPass);
-        router.push({ path: '/outfit', query: { region: regionToPass } });
+        router.push({ path: '/', query: { region: regionToPass } });
     };
 
     const getDustClass = (status) => {
