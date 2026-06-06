@@ -8,7 +8,7 @@ export const isLoading = ref(false);
 export const errorMessage = ref('');
 
 // 상태 코드를 한글로 변환하는 함수 (null 방어 로직 추가)
-const getDustStatusText = (statusCode) => {
+export const getDustStatusText = (statusCode) => {
     if (statusCode === null || statusCode === undefined) return "정보없음";
     const code = String(statusCode);
     if (code === "1") return "좋음";
@@ -19,11 +19,46 @@ const getDustStatusText = (statusCode) => {
 };
 
 // Lambda 응답 파싱 헬퍼
-const parseLambdaResponse = (raw) => {
+export const parseLambdaResponse = (raw) => {
     if (raw && typeof raw.body === 'string') {
         return JSON.parse(raw.body);
     }
     return raw;
+};
+
+// 네트워크 안정화 설정
+const REQUEST_TIMEOUT_MS = 8000; // 단일 요청 타임아웃 (콜드스타트 대비)
+const MAX_ATTEMPTS = 3;          // 최초 1회 + 재시도 2회
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 타임아웃이 적용된 fetch (AbortController) — 무한 대기 방지
+const fetchWithTimeout = async (url, ms = REQUEST_TIMEOUT_MS) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+        return await fetch(url, { signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
+// 날씨/추천 API를 1회 호출하고 파싱된 결과를 반환 (실패 시 throw)
+const requestWeatherOnce = async (encodedRegion) => {
+    const base = 'https://ldotjyg6azeu5pjitdud2bpdey0xgkit.lambda-url.us-east-1.on.aws';
+    const [weatherRes, recommendRes] = await Promise.all([
+        fetchWithTimeout(`${base}/weather?region=${encodedRegion}`),
+        fetchWithTimeout(`${base}/recommend?region=${encodedRegion}`)
+    ]);
+
+    if (!weatherRes.ok || !recommendRes.ok) {
+        throw new Error(`서버 에러 발생 (날씨: ${weatherRes.status}, 추천: ${recommendRes.status})`);
+    }
+
+    return {
+        weatherData: parseLambdaResponse(await weatherRes.json()),
+        recommendData: parseLambdaResponse(await recommendRes.json())
+    };
 };
 
 export const fetchWeatherData = async (regionName) => {
@@ -34,21 +69,19 @@ export const fetchWeatherData = async (regionName) => {
 
     try {
         const encodedRegion = encodeURIComponent(regionName);
-        
-        const weatherApiUrl = `https://ldotjyg6azeu5pjitdud2bpdey0xgkit.lambda-url.us-east-1.on.aws/weather?region=${encodedRegion}`;
-        const recommendApiUrl = `https://ldotjyg6azeu5pjitdud2bpdey0xgkit.lambda-url.us-east-1.on.aws/recommend?region=${encodedRegion}`;
 
-        const [weatherRes, recommendRes] = await Promise.all([
-            fetch(weatherApiUrl),
-            fetch(recommendApiUrl)
-        ]);
-
-        if (!weatherRes.ok || !recommendRes.ok) {
-            throw new Error(`서버 에러 발생 (날씨: ${weatherRes.status}, 추천: ${recommendRes.status})`);
+        // 실패(네트워크/타임아웃/5xx) 시 지수 백오프로 재시도
+        let weatherData, recommendData;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                ({ weatherData, recommendData } = await requestWeatherOnce(encodedRegion));
+                break;
+            } catch (err) {
+                if (attempt === MAX_ATTEMPTS) throw err;
+                console.warn(`날씨 요청 실패 (${attempt}/${MAX_ATTEMPTS}), 재시도합니다.`, err);
+                await sleep(500 * attempt); // 0.5s, 1s
+            }
         }
-
-        const weatherData = parseLambdaResponse(await weatherRes.json());
-        const recommendData = parseLambdaResponse(await recommendRes.json());
 
         // 🌟 백엔드 변경 1: 현재 기온과 예보 기온 분리
         const currentTemp = weatherData.temp !== undefined ? Math.round(Number(weatherData.temp)) : 15;

@@ -1,8 +1,43 @@
 <template>
-    <div v-if="isLoading || isInitializing" class="loading-screen">
-        <div class="spinner"></div>
-        <p>날씨 데이터를 분석하고 있습니다...</p>
-    </div>
+    <main v-if="isLoading || isInitializing" class="main-content" aria-busy="true" aria-label="날씨 데이터를 불러오는 중">
+        <div class="top-section">
+            <div class="card skeleton-card sk-current">
+                <div class="skeleton sk-circle"></div>
+                <div class="sk-lines">
+                    <div class="skeleton sk-line lg"></div>
+                    <div class="skeleton sk-line md"></div>
+                    <div class="skeleton sk-line sm"></div>
+                </div>
+            </div>
+            <div class="sk-ootd">
+                <div class="skeleton sk-line title"></div>
+                <div class="ootd-grid">
+                    <div v-for="n in 4" :key="n" class="card skeleton-card sk-ootd-item">
+                        <div class="skeleton sk-circle sm"></div>
+                        <div class="skeleton sk-line sm"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="bottom-section">
+            <div class="sk-hourly">
+                <div class="skeleton sk-line title"></div>
+                <div class="hourly-flex">
+                    <div v-for="n in 6" :key="n" class="card skeleton-card sk-hour-item">
+                        <div class="skeleton sk-line xs"></div>
+                        <div class="skeleton sk-circle sm"></div>
+                        <div class="skeleton sk-line xs"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="card skeleton-card sk-aqi">
+                <div class="skeleton sk-line title"></div>
+                <div class="skeleton sk-bar"></div>
+                <div class="skeleton sk-bar"></div>
+                <div class="skeleton sk-bar"></div>
+            </div>
+        </div>
+    </main>
 
     <div v-else-if="!currentWeather" class="status-screen error">
         <p class="error-emoji" aria-hidden="true">🌫️</p>
@@ -366,6 +401,40 @@ const displayOotdItems = computed(() => {
 .status-screen.error .error-emoji { font-size: 3.5rem; margin: 0; }
 .retry-btn { margin-top: 0.5rem; background-color: var(--color-amber-600); color: #fff; border: none; padding: 0.7rem 1.8rem; border-radius: 2rem; font-weight: 700; font-size: 1rem; cursor: pointer; transition: background-color 0.2s; min-height: 44px; }
 .retry-btn:hover { background-color: var(--color-amber-500); }
+
+/* --------------------------------------------------------------------------
+   ✨ 스켈레톤 로딩 (스피너 대신 레이아웃 형태를 미리 보여줘 체감 대기 단축)
+-------------------------------------------------------------------------- */
+.skeleton {
+    background: linear-gradient(90deg, var(--color-neutral-200) 25%, var(--color-neutral-100) 37%, var(--color-neutral-200) 63%);
+    background-size: 400% 100%;
+    animation: skeleton-shimmer 1.4s ease infinite;
+    border-radius: 8px;
+}
+@keyframes skeleton-shimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .skeleton { animation: none; }
+}
+
+.skeleton-card { padding: 1.5rem; }
+.sk-current { display: flex; align-items: center; gap: 1.5rem; }
+.sk-lines { flex: 1; display: flex; flex-direction: column; gap: 0.75rem; }
+.sk-circle { width: 80px; height: 80px; border-radius: 50%; flex-shrink: 0; }
+.sk-circle.sm { width: 48px; height: 48px; }
+.sk-line { height: 14px; width: 100%; }
+.sk-line.title { height: 22px; width: 180px; margin-bottom: 1rem; }
+.sk-line.lg { height: 22px; width: 70%; }
+.sk-line.md { width: 55%; }
+.sk-line.sm { width: 40%; }
+.sk-line.xs { height: 12px; width: 60%; }
+.sk-ootd, .sk-hourly { display: flex; flex-direction: column; }
+.sk-ootd-item { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 1.5rem 1rem; }
+.sk-hour-item { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 1.5rem 0.5rem; flex: 1; min-width: 0; }
+.sk-aqi { display: flex; flex-direction: column; gap: 1rem; }
+.sk-bar { height: 14px; width: 100%; }
 .spinner { width: 50px; height: 50px; border: 5px solid var(--color-neutral-200); border-top: 5px solid var(--color-amber-500); border-radius: 50%; animation: spin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
