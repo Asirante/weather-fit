@@ -2,8 +2,15 @@ name: Deploy Frontend (Vue.js)
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths: ["frontend/**"]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "수동 배포를 진행하려면 yes를 입력하세요"
+        required: true
+        type: string
+        default: "no"
 
 permissions:
   id-token: write
@@ -11,6 +18,7 @@ permissions:
 
 jobs:
   build-and-deploy:
+    if: github.event_name == 'push' || inputs.confirm == 'yes'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +27,8 @@ jobs:
           role-to-assume: arn:aws:iam::269578498605:role/service-role/github-actions-inhatc-shared
           aws-region: us-east-1
       - name: Install & Build
+        env:
+          VUE_APP_KAKAO_API_KEY: ${{ secrets.KAKAO_API_KEY }}
         run: |
           cd frontend
           npm install

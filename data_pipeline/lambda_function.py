@@ -8,8 +8,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from forecastAPI import collect_forecast_data
-from weatherAPI import collect_weather_data
 from airStatsAPI import collect_air_stats_data
 from airInfoAPI import get_minu_dust_week_frcst_dspth
 
@@ -67,129 +65,6 @@ def upload_group_as_csv(bucket_name, prefix, data, now):
         except Exception as e:
             logger.exception(f"Failed to upload CSV for {prefix}/{api_name}: {e}")
 
-
-def parse_uv_index_and_air_diffusion(api_data_list):
-    rows = []
-
-    if not isinstance(api_data_list, list):
-        logger.warning(f"expected list, got {type(api_data_list)}")
-        return rows
-
-    for region_data in api_data_list:
-        area_no = region_data.get("areaNo", "")
-        area_name = region_data.get("areaNm", "")
-        response_data = region_data.get("response", {})
-
-        items = (
-            response_data.get("response", {})
-            .get("body", {})
-            .get("items", {})
-            .get("item", [])
-        )
-
-        if isinstance(items, dict):
-            items = [items]
-
-        for item in items:
-            row = {
-                "areaNo": area_no,
-                "areaNm": area_name
-            }
-
-            for key, value in item.items():
-                row[key] = value
-
-            rows.append(row)
-
-    return rows
-
-
-# 초단기예보 파싱
-def parse_ultra_short_forecast(api_data_list):
-    rows = []
-
-    if not isinstance(api_data_list, list):
-        logger.warning(f"ultra_short_forecast: expected list, got {type(api_data_list)}")
-        return rows
-
-    for region in api_data_list:
-        region_code = region.get("region_code", "")
-        region_name = region.get("region_name", "")
-        #region_nx = region.get("nx", "")
-        #region_ny = region.get("ny", "")
-
-        items = (
-            region.get("response", {})
-            .get("response", {})
-            .get("body", {})
-            .get("items", {})
-            .get("item", [])
-        )
-
-        if isinstance(items, dict):
-            items = [items]
-
-        for item in items:
-            rows.append({
-                "region_code": region_code,
-                "region_name": region_name,
-                #"region_nx": region_nx,
-                #"region_ny": region_ny,
-                "baseDate": item.get("baseDate", ""),
-                "baseTime": item.get("baseTime", ""),
-                "fcstDate": item.get("fcstDate", ""),
-                "fcstTime": item.get("fcstTime", ""),
-                "category": item.get("category", ""),
-                "fcstValue": item.get("fcstValue", ""),
-                "nx": item.get("nx", ""),
-                "ny": item.get("ny", "")
-            })
-
-    return rows
-
-
-# 단기예보 파싱
-def parse_short_forecast(api_data):
-    rows = []
-
-    if not isinstance(api_data, list):
-        logger.warning(f"village_forecast: expected list, got {type(api_data)}")
-        return rows
-
-    for region in api_data:
-        region_code = region.get("region_code", "")
-        region_name = region.get("region_name", "")
-        region_nx = region.get("nx", "")
-        region_ny = region.get("ny", "")
-
-        items = (
-            region.get("response", {})
-            .get("response", {})
-            .get("body", {})
-            .get("items", {})
-            .get("item", [])
-        )
-
-        if isinstance(items, dict):
-            items = [items]
-
-        for item in items:
-            rows.append({
-                "region_code": region_code,
-                "region_name": region_name,
-                "region_nx": region_nx,
-                "region_ny": region_ny,
-                "baseDate": item.get("baseDate", ""),
-                "baseTime": item.get("baseTime", ""),
-                "category": item.get("category", ""),
-                "fcstDate": item.get("fcstDate", ""),
-                "fcstTime": item.get("fcstTime", ""),
-                "fcstValue": item.get("fcstValue", ""),
-                "nx": item.get("nx", ""),
-                "ny": item.get("ny", "")
-            })
-
-    return rows
 
 
 # 시도별 실시간 평균정보 파싱  
@@ -323,12 +198,12 @@ def parse_weekly_air_forecast(api_data):
 
 # 파서 정의
 PARSERS = {
-    "uv_index": parse_uv_index_and_air_diffusion,
-    "air_diffusion": parse_uv_index_and_air_diffusion,
+    #"uv_index": parse_uv_index_and_air_diffusion,
+    #"air_diffusion": parse_uv_index_and_air_diffusion,
 
     #"ultra_short_nowcast": parse_ultra_short_nowcast,
-    "ultra_short_forecast": parse_ultra_short_forecast,
-    "short_forecast": parse_short_forecast,
+    #"ultra_short_forecast": parse_ultra_short_forecast,
+    #"short_forecast": parse_short_forecast,
 
     "ctprvn_avg": parse_ctprvn_avg,
     "sigungu_avg": parse_sigungu_avg,
@@ -345,8 +220,6 @@ def lambda_handler(event, context):
     now = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d%H%M%S")
 
     jobs = {
-        "forecast": collect_forecast_data,
-        "weather": collect_weather_data,
         "air_stats": collect_air_stats_data,
         "weekly_air_forecast": get_minu_dust_week_frcst_dspth
     }
@@ -367,12 +240,7 @@ def lambda_handler(event, context):
                 errors[job_name] = error
             else:
                 results[job_name] = result
-
-    if "forecast" in results:
-        upload_group_as_csv(bucket_name, "forecast", results["forecast"], now)
-
-    if "weather" in results:
-        upload_group_as_csv(bucket_name, "weather", results["weather"], now)
+                
 
     if "air_stats" in results:
         upload_group_as_csv(bucket_name, "air_stats", results["air_stats"], now)

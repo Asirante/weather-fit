@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="description" content="현재 위치와 날씨·미세먼지에 맞춰 오늘의 옷차림(OOTD)을 추천해주는 서비스, WeatherFit.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="WeatherFit | 날씨 맞춤 옷차림 추천">
+    <meta property="og:description" content="현재 위치와 날씨·미세먼지에 맞춰 오늘의 옷차림을 추천해주는 서비스.">
+    <link rel="icon" href="<%= BASE_URL %>sun_weather_icon.ico">
+    <!-- PWA: 매니페스트 및 iOS 홈 화면 설정 -->
+    <link rel="manifest" href="<%= BASE_URL %>manifest.webmanifest">
+    <link rel="apple-touch-icon" href="<%= BASE_URL %>icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="WeatherFit">
+    <!-- 디자인 시스템 기준 폰트(Pretendard) 로드 -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+    <title>WeatherFit | 날씨 맞춤 옷차림 추천</title>
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=<%= process.env.VUE_APP_KAKAO_API_KEY %>&libraries=services"></script>
+  </head>
+  <body>
+    <noscript>
+      <strong>We're sorry but Weather Fit doesn't work properly without JavaScript enabled. Please enable it to continue.</strong>
+    </noscript>
+    <div id="app"></div>
+    <!-- built files will be auto injected -->
+  </body>
+</html>
