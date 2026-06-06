@@ -18,6 +18,7 @@
                 <span v-if="currentWeather.feelsLike != null" class="info-item">🥵 체감 <strong>{{ currentWeather.feelsLike }}°C</strong></span>
                 <span class="info-item">💧 미세먼지 <strong>{{ currentWeather.pm10Status }}</strong></span>
                 <span class="info-item">💨 초미세먼지 <strong>{{ currentWeather.pm25Status }}</strong></span>
+                <span v-if="currentWeather.uvLevel" class="info-item">☀️ 자외선 <strong>{{ currentWeather.uvLevel }}</strong></span>
             </div>
         </div>
 
@@ -89,6 +90,7 @@
                         <div class="time">{{ data.time }} {{ index === 0 ? '(지금)' : '' }}</div>
                         <div class="icon-placeholder small" role="img" :aria-label="getWeatherLabel(data.rain, data.sky)">{{ getWeatherIcon(data.rain, data.sky) }}</div>
                         <div class="temp">{{ data.temp }}°C</div>
+                        <div v-if="data.feelsLike != null" class="feels">체감 {{ data.feelsLike }}°C</div>
                     </div>
                 </div>
             </section>
@@ -100,7 +102,7 @@
     import { ref, computed, onMounted } from 'vue';
     import { useRoute } from 'vue-router';
     import { searchHistory } from '../stores/usehistory';
-    import { currentWeather, hourlyData, hourlyOutfitData, isLoading, errorMessage, fetchWeatherData } from '../stores/useWeather';
+    import { currentWeather, currentOutfit, hourlyData, hourlyOutfitData, isLoading, errorMessage, fetchWeatherData } from '../stores/useWeather';
     import { getWeatherIcon, getWeatherLabel, getTopIcon, getBottomIcon, getPackIcon } from '../utils/weather';
 
     const route = useRoute();
@@ -139,10 +141,17 @@
 
         if (!weather || !outfit) return [];
 
+        // 소지품: pack(우산 등) + acc(액세서리) 합쳐서 표시
+        const acc = currentOutfit.value?.acc || [];
+        const packParts = [];
+        if (outfit.pack && outfit.pack !== '불필요') packParts.push(outfit.pack);
+        packParts.push(...acc);
+        const packName = packParts.length > 0 ? packParts.join(', ') : '없음';
+
         return [
             { id: 1, type: getTopIcon(outfit.top), name: outfit.top, description: '추천 상의' },
             { id: 2, type: getBottomIcon(outfit.bottom), name: outfit.bottom, description: '추천 하의' },
-            { id: 3, type: getPackIcon(outfit.pack, weather.sky), name: outfit.pack === '불필요' ? '없음' : outfit.pack, description: '추천 소지품' },
+            { id: 3, type: getPackIcon(outfit.pack, weather.sky), name: packName, description: '추천 소지품' },
             { id: 4, type: '마스크', name: outfit.mask === '마스크 선택' ? '자유' : outfit.mask, description: '식약처 인증 마스크' }
         ];
     });
@@ -364,6 +373,7 @@
     }
     
     .hourly-card .temp { font-size: 1.2rem; font-weight: 700; color: var(--color-text-900); }
+    .hourly-card .feels { font-size: 0.75rem; color: var(--color-amber-600); margin-top: 0.3rem; }
 
     .hourly-card.active-now {
         background-color: #FFFBEB; 

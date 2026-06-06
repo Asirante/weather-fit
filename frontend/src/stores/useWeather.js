@@ -26,6 +26,33 @@ export const parseLambdaResponse = (raw) => {
     return raw;
 };
 
+// 백엔드 관측 기준 시각(baseDate "YYYYMMDD" + baseTime "HHMM") → Date
+export const parseBaseDateTime = (baseDate, baseTime) => {
+    if (!baseDate || !baseTime) return null;
+    const d = String(baseDate);
+    const t = String(baseTime).padStart(4, '0');
+    if (d.length < 8 || t.length < 4) return null;
+    const dt = new Date(
+        Number(d.slice(0, 4)),
+        Number(d.slice(4, 6)) - 1,
+        Number(d.slice(6, 8)),
+        Number(t.slice(0, 2)),
+        Number(t.slice(2, 4))
+    );
+    return isNaN(dt.getTime()) ? null : dt;
+};
+
+// UV 지수 → 한글 단계 (기상청 기준)
+export const getUvLevel = (uv) => {
+    if (uv == null) return null;
+    const v = Number(uv);
+    if (v >= 11) return '위험';
+    if (v >= 8) return '매우높음';
+    if (v >= 6) return '높음';
+    if (v >= 3) return '보통';
+    return '낮음';
+};
+
 // 네트워크 안정화 설정
 const REQUEST_TIMEOUT_MS = 8000; // 단일 요청 타임아웃 (콜드스타트 대비)
 const MAX_ATTEMPTS = 3;          // 최초 1회 + 재시도 2회
@@ -96,14 +123,23 @@ export const fetchWeatherData = async (regionName) => {
         const topStr = Array.isArray(recommendData.top) ? recommendData.top.join(', ') : (recommendData.top || '데이터 없음');
         const bottomStr = Array.isArray(recommendData.bottom) ? recommendData.bottom.join(', ') : (recommendData.bottom || '데이터 없음');
 
-        const updateTime = new Date();
-        updateTime.setMinutes(Math.floor(updateTime.getMinutes() / 30) * 30);
+        // 갱신 시각: 백엔드 관측 기준 시각(baseDate/baseTime) 우선, 없으면 현재 시각으로 폴백
+        const baseDateTime = parseBaseDateTime(weatherData.baseDate, weatherData.baseTime);
+        const updateTime = baseDateTime || new Date();
+        if (!baseDateTime) {
+            updateTime.setMinutes(Math.floor(updateTime.getMinutes() / 30) * 30);
+        }
+
+        // UV 지수 (구버전 백엔드 대비 방어)
+        const uvValue = weatherData.uv != null ? Number(weatherData.uv) : null;
 
         // 1. 현재 날씨 데이터 매핑
         currentWeather.value = {
             location: regionName,
             temp: currentTemp,
             feelsLike: currentFeelsLike,
+            uv: uvValue,
+            uvLevel: getUvLevel(uvValue),
             pm10Status: getDustStatusText(weatherData.pm10Grade),
             pm10: weatherData.pm10 || 0,
             pm25Status: getDustStatusText(weatherData.pm25Grade),
@@ -120,6 +156,7 @@ export const fetchWeatherData = async (regionName) => {
             bottom: bottomStr,
             mask: recommendData.mask || '선택 사항',
             pack: recommendData.pack || '불필요',
+            acc: Array.isArray(recommendData.acc) ? recommendData.acc : [],
             reason: recommendData.reason || ''
         };
 
