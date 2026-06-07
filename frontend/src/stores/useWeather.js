@@ -163,13 +163,25 @@ export const fetchWeatherData = async (regionName) => {
         const today = new Date();
         today.setMinutes(0, 0, 0);
 
-        // 3. 시간별 예보 데이터 동적 매핑
-        hourlyData.value = tempForecast.map((tempStr, index) => {
+        // 백엔드가 준 실제 예보 시각(YYYYMMDDHHMM)으로 라벨링.
+        // 없으면(구버전 백엔드) 현재 시각 + index 로 폴백.
+        const forecastTimes = weatherData.forecastTimes || [];
+        const labelForIndex = (index) => {
+            const ft = forecastTimes[index];
+            if (ft) {
+                const s = String(ft);
+                const dt = parseBaseDateTime(s.slice(0, 8), s.slice(8));
+                if (dt) return dt.toLocaleString('ko-KR', { hour: 'numeric', hour12: true });
+            }
             const date = new Date(today);
             date.setHours(today.getHours() + index);
-            
+            return date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true });
+        };
+
+        // 3. 시간별 예보 데이터 동적 매핑
+        hourlyData.value = tempForecast.map((tempStr, index) => {
             return {
-                time: date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true }),
+                time: labelForIndex(index),
                 temp: Math.round(Number(tempStr)),
                 feelsLike: feelsLikeForecast[index] != null ? Math.round(Number(feelsLikeForecast[index])) : null,
                 rain: rainArray[index] || '강수없음',
@@ -181,15 +193,12 @@ export const fetchWeatherData = async (regionName) => {
 
         // 4. 시간별 옷차림 데이터 - 단일 추천값을 모든 시간대에 동일하게 복제
         hourlyOutfitData.value = tempForecast.map((_, index) => {
-            const date = new Date(today);
-            date.setHours(today.getHours() + index);
-
             return {
                 top: topStr,
                 bottom: bottomStr,
                 mask: recommendData.mask || '선택 사항',
                 pack: recommendData.pack || '불필요',
-                time: date.toLocaleString('ko-KR', { hour: 'numeric', hour12: true })
+                time: labelForIndex(index)
             };
         });
 
