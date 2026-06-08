@@ -2,7 +2,17 @@
 import { ref, watch } from 'vue';
 
 // 1. 브라우저 저장소(localStorage)에서 기존 기록 불러오기 (없으면 빈 배열)
-const savedHistory = JSON.parse(localStorage.getItem('weatherFit-history')) || [];
+// 저장값이 손상됐거나 배열이 아니어도 앱이 죽지 않도록 방어 처리
+const loadHistory = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('weatherFit-history'));
+    return Array.isArray(raw) ? raw : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const savedHistory = loadHistory();
 
 // 2. 핵심: export const로 선언하여 앱 전체에서 공유할 수 있는 전역 변수 만들기
 export const searchHistory = ref(savedHistory);

@@ -29,7 +29,7 @@ def call_api(endpoint, extra_params=None):
     service_key = os.environ.get("WEATHER_API_KEY")
 
     if not base_url or not service_key:
-        raise ValueError("Missing AIR_STATS_API_URL or AIR_API_KEY")
+        raise ValueError("Missing AIR_STATS_API_URL or WEATHER_API_KEY")
 
     params = {
         "serviceKey": service_key,
@@ -42,10 +42,11 @@ def call_api(endpoint, extra_params=None):
         params.update(extra_params)
 
     url = f"{base_url}{endpoint}?{urlencode(params)}"
-    logger.info(f"Calling Air Stats API: {url}")
+    # 서비스키가 URL에 포함되므로 전체 URL을 로그에 남기지 않음 (엔드포인트만)
+    logger.info(f"Calling Air Stats API: {endpoint}")
 
     request = Request(url, method="GET")
-    with urlopen(request) as response:
+    with urlopen(request, timeout=15) as response:
         return json.loads(response.read().decode("utf-8"))
 
 def get_ctprvn_measure_list(item_code):

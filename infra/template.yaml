@@ -1,7 +1,16 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
-Description: "Common S3 & DynamoDB Stack"
+Description: "WeatherFit 공통 리소스 (S3 + DynamoDB) — 참고용 문서. 실제 배포는 콘솔 수동 관리."
+
+# ──────────────────────────────────────────────────────────────
+# 주의(IMPORTANT)
+#  - 이 템플릿은 sam/cfn deploy 용이 아니라, 현재 운영 리소스를 코드로
+#    "문서화"하기 위한 참고 자료입니다. (학교 계정 태그 정책으로 sam deploy 불가)
+#  - 키 스키마/TTL은 애플리케이션 코드 기준으로 반영했습니다.
+#    weather/forecast 캐시는 한 지역에 여러 row를 저장하므로 복합키입니다.
+# ──────────────────────────────────────────────────────────────
+
 Resources:
+  # ── S3 버킷 ──
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -14,21 +23,52 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: inhatc-team2-4-parquet-data
+  BatchDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: inhatc-team2-4-batch-data   # Bedrock 배치 입출력
 
+  # ── DynamoDB 테이블 ──
+  # 실황(기온/습도/풍속) + 자외선: 지역당 카테고리별 row → region_code + category
   WeatherCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: inhatc-team2-5-weather-cache
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{AttributeName: region_code, AttributeType: S}]
-      KeySchema: [{AttributeName: region_code, KeyType: HASH}]
+      AttributeDefinitions:
+        - {AttributeName: region_code, AttributeType: S}
+        - {AttributeName: category, AttributeType: S}
+      KeySchema:
+        - {AttributeName: region_code, KeyType: HASH}
+        - {AttributeName: category, KeyType: RANGE}
+
+  # 대기질: 측정소 단위 단일 row → stationKey
   AirCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: inhatc-team2-5-air-cache
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{AttributeName: region_code, AttributeType: S}]
-      KeySchema: [{AttributeName: region_code, KeyType: HASH}]
+      AttributeDefinitions: [{AttributeName: stationKey, AttributeType: S}]
+      KeySchema: [{AttributeName: stationKey, KeyType: HASH}]
+
+  # 초단기예보(시간별): 지역당 예보시각·카테고리별 row → region_code + forecast_key
+  # 지나간 예보 누적 방지를 위해 TTL(expireAt) 사용
+  ForecastCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inhatc-team2-5-forecast-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: region_code, AttributeType: S}
+        - {AttributeName: forecast_key, AttributeType: S}
+      KeySchema:
+        - {AttributeName: region_code, KeyType: HASH}
+        - {AttributeName: forecast_key, KeyType: RANGE}
+      TimeToLiveSpecification:
+        AttributeName: expireAt
+        Enabled: true
+
+  # AI 추천 캐시: PK="weather_pattern" 고정, SK=패턴키
   RecommendCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
