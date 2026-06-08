@@ -262,8 +262,26 @@ def query_forecast(region_code):
 
 
 def parse_forecast_series(forecast_items):
+    # 누적된 과거 발표분 제거:
+    # 가장 최근 발표(baseDate+baseTime) 기준 항목만 사용
+    # (build_pattern의 일교차/최저기온이 지난 날까지 섞여 계산되는 것 방지)
+    latest_base = ""
+    for item in forecast_items:
+        b = (
+            f"{item.get('baseDate', '')}"
+            f"{item.get('baseTime', '')}"
+        )
+        if b > latest_base:
+            latest_base = b
+
     series = {}
     for item in forecast_items:
+        b = (
+            f"{item.get('baseDate', '')}"
+            f"{item.get('baseTime', '')}"
+        )
+        if latest_base and b != latest_base:
+            continue
         cat = item.get("category", "")
         fcst_time = item.get("fcstDate", "") + item.get(
             "fcstTime", ""
