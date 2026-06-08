@@ -1,165 +1,96 @@
 # backend/
 
-FastAPI + Mangum 기반 백엔드 API. AWS Lambda 위에서 실행되며, Lambda Function URL을 통해 외부에 노출됩니다.
-사용자 요청 시 DynamoDB에서 캐싱된 AI 추천을 조회하고, 캐시 미스 시 Bedrock를 실시간 호출합니다.
+옷차림 추천·날씨 **서빙 API**. 단일 AWS Lambda(`inhatc-team2-1-recommendAPI`)이며 **Lambda Function URL**로 노출됩니다.
+
+> ⚠️ FastAPI/Mangum/Bedrock 실시간 호출을 쓰지 않습니다. **단일 `lambda_function.py`** 가 경로(`rawPath`)로 분기하고, **DynamoDB 조회만** 합니다. 추천은 `ai_pipeline`이 미리 생성해 `recommend-cache`에 넣어둡니다.
 
 ---
 
-## 기술 스택
-
-| 기술 | 용도 |
-|------|------|
-| Python 3.11+ | 런타임 |
-| FastAPI | REST API 프레임워크 |
-| Mangum | FastAPI → Lambda 어댑터 |
-| Lambda Function URL | API 엔드포인트 |
-| Amazon Bedrock | AI 추천 생성 (Claude 3.5 Haiku) |
-| Amazon DynamoDB | AI 답변 캐시 저장소 |
-| boto3 | AWS SDK (DynamoDB, S3, Bedrock 접근) |
-| pytest | 테스트 프레임워크 |
-
----
-
-## 추천 응답 흐름
-
-```
-사용자 요청 (위치 + 날씨)
-  → 기상 조건으로 DynamoDB 파티션 키 생성
-  → DynamoDB 캐시 조회
-    → 캐시 히트: 저장된 AI 답변 즉시 반환
-    → 캐시 미스: Bedrock 실시간 호출 (프롬프트 캐싱 적용)
-      → 응답을 DynamoDB에 저장 후 반환
-```
-
-대부분의 기상 패턴은 전날 자정 배치 추론으로 사전 캐싱되어 있으므로, 실시간 Bedrock 호출은 예외적인 경우에만 발생합니다.
-
----
-
-## 로컬 실행
-
-```bash
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload
-```
-
-`http://localhost:8000`에서 실행됩니다.
-API 문서는 `http://localhost:8000/docs` (Swagger UI)에서 확인할 수 있습니다.
-
----
-
-## 환경 변수
-
-`.env.example`을 `.env`로 복사한 뒤 값을 채워주세요.
-
-| 변수명 | 설명 | 예시 |
-|--------|------|------|
-| `DYNAMODB_TABLE_NAME` | AI 추천 캐시 테이블명 | `weather-recommend-dev` |
-| `S3_BUCKET_NAME` | 원본 데이터 버킷명 | `myapp-dev-raw-data` |
-| `WEATHER_API_KEY` | 기상청 API 인증키 | 공공데이터포털에서 발급 |
-| `BEDROCK_MODEL_ID` | Bedrock 모델 ID | `anthropic.claude-3-5-haiku-20241022-v1:0` |
-
----
-
-## 폴더 구조
+## 구성
 
 ```
 backend/
-├── app/
-│   ├── main.py           # FastAPI 앱 + Mangum 핸들러
-│   ├── routers/          # 엔드포인트별 라우터
-│   ├── services/
-│   │   ├── recommend.py  # 추천 로직 (캐시 조회 → Bedrock 호출)
-│   │   ├── bedrock.py    # Bedrock 클라이언트 및 프롬프트 관리
-│   │   ├── cache.py      # DynamoDB 캐시 읽기/쓰기
-│   │   └── weather.py    # 기상 데이터 조회
-│   ├── models/           # Pydantic 스키마
-│   ├── prompts/          # 시스템 프롬프트 템플릿
-│   ├── utils/            # 유틸리티 함수
-│   └── config.py         # 환경 변수 로드
-├── tests/
-│   ├── test_recommend.py
-│   ├── test_cache.py
-│   └── conftest.py
-├── requirements.txt
-├── template.yaml          # SAM 템플릿 (백엔드용)
-├── .env.example
+├── lambda_function.py   # 핸들러: /weather, /recommend 분기 + 패턴키(SK) 생성 + 조회
+├── mapping.py           # region_to_code(지역명→코드), gu_to_station(지역→측정소)
+├── docker-compose.yml   # 로컬 DynamoDB Local (선택)
+├── env.json             # SAM local용 더미 env (실제 시크릿 아님)
 └── README.md
 ```
 
 ---
 
-## 테스트
+## 엔드포인트 (Lambda Function URL)
 
-```bash
-# 전체 테스트
-pytest
+| 경로 | 파라미터 | 동작 |
+|------|---------|------|
+| `GET /weather` | `region`(지역명) 또는 `region_code` | weather-cache(실황)·forecast-cache(예보)·air-cache(대기질) 조회 → 현재/시간별 응답 |
+| `GET /recommend` | 동일 | 기상으로 패턴키(SK) 생성 → recommend-cache 조회 |
 
-# 특정 파일
-pytest tests/test_recommend.py
-
-# 커버리지 포함
-pytest --cov=app
+### `/weather` 주요 응답 필드
+```json
+{
+  "region_code": "1147062000", "region_name": "서울특별시 양천구",
+  "baseDate": "20260607", "baseTime": "1800",
+  "temp": 26.1, "feelsLike": 26.2,
+  "tempForecast": [27, 26, 25, ...], "feelsLikeForecast": [...],
+  "forecastTimes": ["202606071900", ...],
+  "rain": ["강수없음", ...], "sky": ["흐림", ...],
+  "uv": 0.0, "o3": 0.038,
+  "pm10": 32.0, "pm10Grade": "2", "pm25": 15.0, "pm25Grade": "1"
+}
 ```
+- **체감온도**(`feelsLike`)는 캐시의 풍속(WSD)/습도(REH)로 기상청 공식(저온=풍속냉각, 고온=습도식) 계산.
+- **시간별 예보**는 "가장 최근 발표(baseDate+baseTime) 기준"만 사용하고 실제 예보시각(`forecastTimes`)을 함께 반환(누적 잔재 제거).
 
-CI/CD 파이프라인에서 pytest가 실패하면 배포가 중단됩니다. PR 올리기 전에 로컬에서 반드시 테스트를 돌려주세요.
+### `/recommend` 패턴키(SK)
+`temp:{zone}|diff:{lvl}|rain:{lvl}|pm:{grade}|wind:{lvl}|uv:{lvl}|pty:{type}` 형식.
+이 임계값/enum은 **`ai_pipeline/pattern_domains.py`와 정확히 일치해야** 캐시 히트됩니다(현재 일치).
 
 ---
 
-## Bedrock 연동 참고사항
+## 의존 테이블
+`recommend-cache`(추천) · `weather-cache`(실황) · `air-cache`(대기질) · `forecast-cache`(예보).
+키 스키마는 루트 README의 "데이터 저장소" 표 참고.
 
-### 프롬프트 캐싱
+---
 
-캐시 미스로 Bedrock를 실시간 호출할 때, **프롬프트 캐싱**을 적용하여 반복되는 시스템 지시어의 토큰 처리를 건너뜁니다. 이를 통해 토큰 비용과 응답 시간을 절감합니다.
+## 로컬 실행 (선택)
 
-### 프롬프트 관리
+DynamoDB Local로 핸들러를 단독 실행할 수 있습니다.
 
-시스템 프롬프트는 `app/prompts/` 폴더에서 관리합니다. 프롬프트 변경 시 주의사항:
-- 변경 후 반드시 여러 기상 패턴으로 테스트하여 환각(hallucination) 발생 여부 확인
-- 공식 기준(기상청 기준, 의류 가이드라인 등)을 프롬프트에 포함하여 답변 신뢰성 확보
-- 프롬프트 변경은 PR에 변경 사유와 테스트 결과를 함께 기재
+```bash
+cd backend
+docker compose up -d           # DynamoDB Local
+# AWS_SAM_LOCAL=true 면 lambda_function.py가 로컬 DynamoDB로 접속
+python -c "import lambda_function as f; print(f.lambda_handler({'rawPath':'/weather','rawQueryString':'region_code=1147062000'}, None))"
+```
 
-### DynamoDB 캐시 키 설계
-
-파티션 키는 기상 조건(기온, 습도, 강수 확률 등)의 조합으로 구성됩니다. 키 설계 변경 시 기존 캐시가 무효화될 수 있으므로 데이터 팀과 반드시 협의하세요.
-
-### 로컬에서 Bedrock 테스트
-
-로컬에서 Bedrock를 호출하려면 AWS 자격 증명이 필요합니다. dev 환경의 자격 증명을 사용하되, 불필요한 반복 호출을 피하세요 (토큰 과금). 테스트 시에는 DynamoDB 캐시 히트 시나리오 위주로 확인하고, Bedrock 직접 호출 테스트는 최소한으로 진행합니다.
+> `env.json`의 `local` 자격증명은 DynamoDB Local용 더미입니다(실제 키 아님).
 
 ---
 
 ## 배포
 
-`develop` 또는 `main` 브랜치에 Push하면 GitHub Actions가 자동으로 테스트 → SAM 빌드 → 배포를 수행합니다. 수동 배포가 필요한 경우:
+> ⚠️ **SAM CLI 사용 불가**(학교 계정 비용관리 태그 정책). 배포는 GitHub Actions가 `update-function-code`로 수행합니다.
+
+`develop`/`main`의 `backend/**` 변경 → `deploy-all-lambdas.yml`이 자동 배포:
 
 ```bash
-sam build
-sam deploy --config-env dev   # 개발 환경
-sam deploy --config-env prod  # 운영 환경
+# 워크플로우 동작(요지)
+cd backend
+zip -r ../deploy.zip lambda_function.py mapping.py ...   # 최상위 파일만
+aws lambda update-function-code \
+  --function-name inhatc-team2-1-recommendAPI \
+  --zip-file fileb://../deploy.zip
 ```
 
-배포 완료 후 출력되는 Function URL이 API 엔드포인트입니다.
-
-### Lambda 패키징 주의사항
-
-- ZIP 배포 시 압축 해제 기준 **250MB 제한**이 있습니다.
-- 의존성이 늘어나면 Lambda Layer로 분리하거나 컨테이너 이미지 배포를 검토하세요.
-- `requirements.txt`에 불필요한 패키지가 포함되지 않도록 관리해 주세요.
+Lambda 환경변수/트리거/메모리 등 **설정 변경은 AWS 콘솔(us-east-1)** 에서 직접 합니다.
 
 ---
 
-## 개발 시 참고사항
+## 참고/주의
 
-### DynamoDB 접근
-
-- 로컬 개발 시: [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html) 또는 dev 환경 테이블 사용
-- **prod 테이블에 직접 접근 금지**
-- boto3 클라이언트 생성 시 `region_name="ap-northeast-2"` 명시
-
-### API 버전 관리
-
-엔드포인트 경로에 버전 접두사를 사용합니다: `/api/v1/weather`, `/api/v1/recommend`
-breaking change가 필요하면 `/api/v2/...`로 새 버전을 추가하고, 기존 버전은 일정 기간 유지합니다.
+- **CORS**: Function URL 레벨에서 설정됩니다(코드엔 헤더 없음). 운영 도메인으로 제한 권장.
+- **입력**: `region`/`region_code`는 매핑 딕셔너리 조회에만 쓰여 인젝션 위험은 낮습니다.
+- **에러**: 내부 오류는 일반 메시지의 500으로 반환(상세 비노출).
+- 추천 임계값을 바꾸면 `ai_pipeline`도 함께 바꿔 **재생성**해야 합니다(아니면 캐시 미스→404).

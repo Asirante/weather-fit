@@ -572,7 +572,7 @@ const displayOotdItems = computed(() => {
 .mask-hint { margin-top: 0.5rem; font-size: 0.72rem; font-weight: 700; color: var(--color-text-400); }
 
 .mask-detail {
-    position: absolute; inset: 0; background: #fff; border-radius: inherit;
+    position: absolute; inset: 0; background: #fff;
     display: flex; flex-direction: column; text-align: left;
     opacity: 0; visibility: hidden; transform: translateY(8px); overflow-y: auto;
     transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;

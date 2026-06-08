@@ -1,188 +1,94 @@
 # data_pipeline/
 
-기상 데이터 수집과 AI 배치 추론을 담당하는 서버리스 파이프라인.
-전날 자정에 기상청 예보를 수집하고, 유니크 기상 패턴을 추출하여 Bedrock 배치 추론으로 AI 답변을 사전 캐싱합니다.
+기상 **예보·자외선·대기 통계** 수집 Lambda 모음. 전국 격자/측정소를 **Step Functions Distributed Map**으로 병렬 수집해 S3/DynamoDB에 적재합니다.
+
+> ℹ️ AI 배치 추론은 이 폴더가 아니라 [`ai_pipeline/`](../ai_pipeline/)에서 합니다. 실시간 실황/대기질 수집은 [`real_time/`](../real_time/)에 있습니다.
 
 ---
 
-## 기술 스택
-
-| 기술 | 용도 |
-|------|------|
-| Amazon EventBridge | 데이터 수집 및 배치 추론 스케줄링 |
-| AWS Lambda | 데이터 수집 + 배치 추론 실행 |
-| Amazon Bedrock | AI 추천 생성 (Claude 3.5 Haiku, 배치 추론) |
-| Amazon DynamoDB | AI 답변 캐싱 (기상 조건 = PK, TTL 영구) |
-| Amazon S3 | 원본 데이터 아카이빙 |
-| AWS Glue | CSV → Parquet 변환 (ETL) |
-| Amazon Athena | S3 데이터 SQL 분석 |
-
----
-
-## 파이프라인 흐름
-
-```
-[매일 자정 - EventBridge 트리거]
-
-1단계: 기상 데이터 수집
-   EventBridge → Lambda (기상청 예보 API 호출)
-     → 전국 예보 데이터 수집
-     → S3에 원본 저장 + DynamoDB에 실시간 데이터 적재
-
-2단계: AI 배치 추론
-   수집된 예보에서 유니크 기상 패턴 추출 (중복 제거)
-     → Bedrock 배치 추론 (수십 개 패턴을 한 번에 처리)
-     → DynamoDB에 AI 답변 캐싱 (기상 조건 = PK, TTL 영구)
-
-3단계: 분석용 변환 (별도 스케줄)
-   S3 (CSV 원본) → Glue (Parquet 변환) → Athena (분석)
-```
-
-### 유니크 패턴 추출 예시
-
-```
-전국 예보 300건 수집
-  → 기온/습도/강수확률/미세먼지 조합으로 패턴화
-  → 중복 제거 후 유니크 패턴 약 30~50개
-  → 이미 DynamoDB에 캐싱된 패턴 제외
-  → 신규 패턴만 Bedrock 배치 추론 요청
-```
-
----
-
-## 폴더 구조
+## 구성 (실제)
 
 ```
 data_pipeline/
-├── lambdas/
-│   ├── weather_collector/
-│   │   ├── handler.py         # 기상 데이터 수집 핸들러
-│   │   └── requirements.txt
-│   ├── batch_inference/
-│   │   ├── handler.py         # 유니크 패턴 추출 + Bedrock 배치 추론
-│   │   ├── prompts.py         # 배치 추론용 프롬프트 관리
-│   │   └── requirements.txt
-│   └── ...
-├── glue_jobs/
-│   └── csv_to_parquet.py      # Glue ETL 스크립트
-├── template.yaml               # SAM 템플릿 (참고용 - 실제 배포에 사용하지 않음, 아래 주의사항 참고)
-├── .env.example
+├── lambda_function.py            # dataAPI: 대기 통계(시도/시군구 평균) + 초미세먼지 주간예보 → S3
+├── airStatsAPI.py                # 에어코리아 통계 호출 (스레드풀)
+├── airInfoAPI.py                 # 에어코리아 주간예보 호출
+├── forecast_batches/             # 격자 분할 → 매니페스트(S3) 생성
+├── forecast_worker/              # 초단기예보(getUltraSrtFcst) → forecast-cache + S3 (TTL: expireAt)
+├── forecast_merge/               # 배치 CSV 병합 → S3
+├── weather_batches/              # 자외선(getUVIdxV4)·대기확산 수집 → S3
+├── weather_merge/                # 배치 CSV 병합 → S3
 └── README.md
 ```
 
----
-
-## 환경 변수
-
-| 변수명 | 설명 | 사용 위치 |
-|--------|------|----------|
-| `WEATHER_API_KEY` | 기상청 API 인증키 | 수집 Lambda |
-| `DYNAMODB_TABLE_NAME` | 실시간 기상 데이터 테이블 | 수집 Lambda |
-| `DYNAMODB_CACHE_TABLE_NAME` | AI 답변 캐시 테이블 | 배치 추론 Lambda |
-| `BEDROCK_MODEL_ID` | Bedrock 모델 ID | 배치 추론 Lambda |
-| `S3_RAW_BUCKET` | 원본 CSV 저장 버킷 | 수집 Lambda |
-| `S3_PARQUET_BUCKET` | 변환된 Parquet 저장 버킷 | Glue Job |
-
-Lambda 환경 변수는 **AWS 콘솔(us-east-1 리전)에서 직접 설정**합니다. `git-sync.html` 가이드를 참고하세요.
+각 하위 폴더의 `lambda_function.py`가 개별 Lambda로 배포됩니다.
 
 ---
 
-## 로컬 개발 및 테스트
+## 수집 파이프라인 (Step Functions Distributed Map)
 
-### Lambda 함수 로컬 실행
+전국을 단일 Lambda로 돌리면 너무 오래 걸려, **매니페스트로 배치를 나누고 Distributed Map(maxConcurrency)** 으로 병렬 처리합니다.
 
-> ⚠️ **SAM CLI 사용 불가**: 학교 AWS 계정의 비용관리 태그 정책으로 인해 `sam build` / `sam local invoke`를 사용하면 권한 오류가 발생합니다. 로컬 테스트는 아래 방법을 사용하세요.
+```
+예보(forecast) 상태머신:
+  forecast-data-batches  (격자 dedup → 배치 매니페스트 S3 저장)
+    → Distributed Map (maxConcurrency=5)
+        → forecast-data-worker (getUltraSrtFcst 호출 → forecast-cache 적재 + 배치 CSV)
+    → forecast-data-merge (배치 CSV 병합 → S3)
+
+부가배치(weather) 상태머신:
+  GenerateRunId(배치 정의)
+    → Map (maxConcurrency=3)
+        → weather-data-batches (자외선·대기확산 수집 → S3)
+    → weather-data-merge (병합)
+    → dataAPI (대기 통계 + 주간예보 → S3)
+```
+
+> 상태머신 정의(ASL)와 EventBridge 스케줄은 **콘솔에서 관리**되며 레포에는 포함되지 않습니다.
+
+---
+
+## 사용 외부 API (공공데이터포털)
+
+| API | 호출 위치 | 적재 |
+|-----|----------|------|
+| 기상청 초단기예보 `getUltraSrtFcst` | `forecast_worker` | forecast-cache (+S3) |
+| 생활기상지수 자외선 `getUVIdxV4` / 대기확산 `getAirDiffusionIdxV4` | `weather_batches` | S3 |
+| 에어코리아 시도/시군구 평균 | `airStatsAPI` | S3 |
+| 에어코리아 초미세먼지 주간예보 `getMinuDustWeekFrcstDspth` | `airInfoAPI` | S3 |
+
+인증키 env: `WEATHER_API_KEY`(기상청·생활지수·에어코리아 공통), 베이스 URL: `FORECAST_API_URL`/`WEATHER_API_URL`/`AIR_STATS_API_URL`/`AIR_INFO_API_URL`.
+
+---
+
+## forecast-cache 적재 규칙
+- 키: `region_code`(PK) + `forecast_key = fcstDate#fcstTime#category`(SK).
+- 같은 대상시각+카테고리는 덮어쓰기되지만 **지나간 대상시각 항목은 누적**되므로, 각 항목에 **`expireAt`(대상시각+12h) TTL**을 부여해 자동 삭제합니다.
+  → DynamoDB 테이블에서 **TTL 속성 `expireAt` 활성화 필요**(콘솔).
+- 서빙(`backend`)은 조회 시에도 "가장 최근 발표분만" 사용해 누적 영향을 한 번 더 차단합니다.
+
+---
+
+## 로컬 실행
 
 ```bash
-# 로컬에서 직접 Python으로 핸들러 실행 (단위 테스트)
 cd data_pipeline
-python -c "from lambda_function import lambda_handler; lambda_handler({}, None)"
+python -c "from forecast_worker.lambda_function import lambda_handler; print(lambda_handler({'batch_id':0,'locations':[{'nx':60,'ny':127,'regions':[]}]}, None))"
 ```
-
-실제 AWS 리소스(DynamoDB, S3)에 접근하는 테스트는 dev 환경 자격증명을 사용하되, **prod 리소스에는 절대 접근하지 마세요.**
-
-### Glue Job 로컬 테스트
-
-Glue Job은 AWS 환경에서만 실행됩니다. 로컬에서는 동일한 로직을 pandas로 테스트할 수 있습니다.
-
-```bash
-pip install pandas pyarrow
-python glue_jobs/csv_to_parquet.py --local
-```
+> 실제 AWS 리소스 접근 테스트는 dev 자격증명만 사용하고 **prod 리소스 접근 금지**.
 
 ---
 
 ## 배포
 
-> ⚠️ **SAM CLI 사용 불가**: `template.yaml`은 참고용 문서로만 보존하며 실제 배포에 사용하지 않습니다.
+> ⚠️ SAM CLI 사용 불가. `develop`/`main`의 `data_pipeline/**` 변경 → `deploy-all-lambdas.yml`이 변경된 하위 폴더를 감지해 해당 Lambda에 `update-function-code`로 배포합니다.
 
-`develop` 또는 `main` 브랜치의 `data_pipeline/**` 경로에 Push하면 **GitHub Actions가 자동으로 배포**를 수행합니다.
-
-```yaml
-# .github/workflows/deploy-data-pipeline.yml 동작 방식
-cd data_pipeline
-zip -r ../deploy.zip .
-aws lambda update-function-code \
-  --function-name inhatc-team2-5-dataAPI \
-  --zip-file fileb://../deploy.zip
-```
-
-### 수동 배포가 필요한 경우
-
-```bash
-cd data_pipeline
-zip -r ../deploy.zip .
-aws lambda update-function-code \
-  --function-name inhatc-team2-5-dataAPI \
-  --zip-file fileb://../deploy.zip
-```
-
-### Lambda 환경변수 / 트리거 설정 변경
-
-코드가 아닌 Lambda 설정(환경변수, 트리거, 메모리 등)을 변경해야 하는 경우에는 **AWS 콘솔(us-east-1 리전)에서 직접 수정**하세요. `git-sync.html` 가이드를 참고하세요.
+스케줄/상태머신/환경변수 변경은 **AWS 콘솔(us-east-1)** 에서 직접.
 
 ---
 
-## 비용 주의사항
-
-| 서비스 | 과금 기준 | 절감 방법 |
-|--------|----------|----------|
-| **Bedrock** | 입출력 토큰 (프리 티어 없음) | 배치 추론으로 일괄 처리, 유니크 패턴만 추론 |
-| **Glue** | DPU-시간 (프리 티어 없음) | 작업 최적화, 불필요한 실행 제거 |
-| **Athena** | 스캔 데이터 TB당 $5 (프리 티어 없음) | Parquet 사용 시 최대 95% 절감 |
-| DynamoDB | On-Demand R/W (25GB까지 무료) | 불필요한 스캔 쿼리 지양 |
-| S3 | 저장량 + 요청 수 | 수명 주기 정책으로 오래된 데이터 아카이빙 |
-
-### Bedrock 비용 관리 핵심
-
-- **배치 추론**: 유니크 패턴만 추출하여 일괄 처리 → 중복 호출 제거
-- **DynamoDB 캐싱**: TTL 영구 설정으로 한 번 생성된 답변은 재사용
-- **기존 캐시 제외**: 배치 추론 전 DynamoDB에 이미 있는 패턴은 건너뜀
-- 프롬프트 변경이나 배치 추론 로직 수정 시 예상 비용을 팀에 공유해 주세요
-
----
-
-## Athena 테이블 관리
-
-Athena 테이블 DDL은 `infra/athena_ddl/`에서 SQL 파일로 버전 관리합니다. 콘솔에서 직접 DDL을 실행하지 말고, SQL 파일을 먼저 커밋한 뒤 실행하세요.
-
-```sql
--- infra/athena_ddl/weather_parquet.sql
-CREATE EXTERNAL TABLE weather_parquet (
-  ...
-)
-STORED AS PARQUET
-LOCATION 's3://<parquet-bucket>/weather/';
-```
-
----
-
-## 개발 시 참고사항
-
-### DynamoDB 캐시 테이블 스키마
-
-캐시 테이블의 파티션 키는 기상 조건 조합(기온, 습도, 강수확률 등)으로 구성됩니다. 키 설계를 변경하면 기존 캐시가 모두 무효화되므로, 변경 시 백엔드 팀과 반드시 협의하세요.
-
-### 프롬프트 일관성
-
-배치 추론(`data_pipeline/`)과 실시간 호출(`backend/`)에서 사용하는 시스템 프롬프트가 동일해야 합니다. 프롬프트를 수정할 때는 양쪽 모두 업데이트하세요. 공통 프롬프트를 별도 모듈로 분리하는 것을 권장합니다.
+## 알려진 개선 포인트
+- `airStatsAPI`/`airInfoAPI`는 타임아웃을 적용했으나 **재시도 로직이 없음**(다른 워커는 `request_text_with_retry` 보유).
+- merge/UV 탐색의 `list_objects_v2`는 **페이지네이션 없음**(배치 1000개 초과 시 누락 가능).
+- `forecast_worker`는 배치 내 API를 **순차 호출**(`weather_batches`는 스레드풀) — 대량 시 느림.
+- 격자 dedup·배치 분할 로직이 여러 파일에 중복 → 공용화 여지.
