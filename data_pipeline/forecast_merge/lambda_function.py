@@ -12,6 +12,15 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def list_all_objects(bucket, prefix):
+    # 페이지네이션: 배치가 1000개를 넘어도 누락 없이 전체 수집
+    objs = []
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        objs.extend(page.get("Contents", []))
+    return objs
+
+
 def read_csv_from_s3(bucket, key):
     response = s3_client.get_object(
         Bucket=bucket,
@@ -49,16 +58,11 @@ def lambda_handler(event, context):
 
     prefix = f"raw_tmp/forecast/{run_id}/"
 
-    response = s3_client.list_objects_v2(
-        Bucket=bucket,
-        Prefix=prefix
-    )
-
     merged_rows = []
     fieldnames = None
     source_files = []
 
-    for obj in response.get("Contents", []):
+    for obj in list_all_objects(bucket, prefix):
         key = obj["Key"]
 
         if not key.endswith("/ultra_short_forecast.csv"):
