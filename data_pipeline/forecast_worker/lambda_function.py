@@ -19,6 +19,11 @@ logger.setLevel(logging.INFO)
 
 ENDPOINT = "/getUltraSrtFcst"
 
+# 예보 항목 TTL: 대상시각 + 버퍼(기본 12시간) 후 자동 삭제
+FORECAST_TTL_SECONDS = int(
+    os.environ.get("FORECAST_TTL_SECONDS", str(12 * 3600))
+)
+
 
 def get_base_datetime():
     now = datetime.now(ZoneInfo("Asia/Seoul")) - timedelta(hours=1)
@@ -144,6 +149,19 @@ def save_forecast_to_dynamodb(rows, table_name):
                 item["forecast_key"] = (
                     f"{row['fcstDate']}#{row['fcstTime']}#{row['category']}"
                 )
+
+                # DynamoDB TTL: 예보 대상시각 + 버퍼 이후 자동 삭제
+                # (지나간 예보가 누적되지 않도록)
+                try:
+                    fdt = datetime.strptime(
+                        f"{row['fcstDate']}{row['fcstTime']}",
+                        "%Y%m%d%H%M",
+                    ).replace(tzinfo=ZoneInfo("Asia/Seoul"))
+                    item["expireAt"] = (
+                        int(fdt.timestamp()) + FORECAST_TTL_SECONDS
+                    )
+                except Exception:
+                    pass
 
                 batch.put_item(Item=item)
                 saved_count += 1
