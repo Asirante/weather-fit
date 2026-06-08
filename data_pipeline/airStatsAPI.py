@@ -1,12 +1,38 @@
 import json
 import os
+import time
 import logging
 import concurrent.futures
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+
+def fetch_json_with_retry(url, retries=3, timeout=15, sleep_seconds=0.5):
+    """일시적 오류(429/5xx, 네트워크)에 한해 지수 백오프로 재시도.
+    그 외 오류는 즉시 raise (과도한 재요청으로 차단되지 않도록 보수적으로)."""
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            request = Request(url, method="GET")
+            with urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as e:
+            last_error = e
+            if getattr(e, "code", None) in (429, 500, 502, 503, 504) and attempt < retries:
+                time.sleep(sleep_seconds * attempt)
+                continue
+            raise
+        except URLError as e:
+            last_error = e
+            if attempt < retries:
+                time.sleep(sleep_seconds * attempt)
+                continue
+            raise
+    raise last_error
 
 ENDPOINTS = {
     "ctprvn_avg": "/getCtprvnMesureLIst",
@@ -45,9 +71,7 @@ def call_api(endpoint, extra_params=None):
     # 서비스키가 URL에 포함되므로 전체 URL을 로그에 남기지 않음 (엔드포인트만)
     logger.info(f"Calling Air Stats API: {endpoint}")
 
-    request = Request(url, method="GET")
-    with urlopen(request, timeout=15) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return fetch_json_with_retry(url)
 
 def get_ctprvn_measure_list(item_code):
     return call_api(

@@ -26,8 +26,13 @@ FORECAST_TTL_SECONDS = int(
 
 
 def get_base_datetime():
-    now = datetime.now(ZoneInfo("Asia/Seoul")) - timedelta(hours=1)
-    return now.strftime("%Y%m%d"), now.strftime("%H00")
+    # 초단기예보(getUltraSrtFcst)는 매시 30분 발표, 45분 이후 제공.
+    # 따라서 base_time은 HH30이며, 45분 이전이면 직전 시각의 30분을 사용.
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    if now.minute < 45:
+        now = now - timedelta(hours=1)
+    base = now.replace(minute=30, second=0, microsecond=0)
+    return base.strftime("%Y%m%d"), base.strftime("%H%M")
 
 
 def call_api(location):
