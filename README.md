@@ -1,182 +1,105 @@
-# backend/
+# WeatherFit ☀️🧥
 
-FastAPI + Mangum 기반 백엔드 API. AWS Lambda 위에서 실행되며, Lambda Function URL을 통해 외부에 노출됩니다.
-사용자 요청 시 DynamoDB에서 캐싱된 AI 추천을 조회하고, 캐시 미스 시 Bedrock를 실시간 호출합니다.
+현재 위치와 날씨·미세먼지에 맞춰 **오늘의 옷차림(OOTD)** 을 추천해주는 서버리스 웹 서비스입니다.
+사용자는 별도 가입 없이 현재 위치(또는 지역 검색)의 날씨·대기질·시간별 예보와 함께,
+기상 패턴에 맞춘 AI 옷차림 추천(상·하의, 소지품, 마스크)을 바로 확인할 수 있습니다.
+
+> 인하공전 2팀 프로젝트 · 전 구간 AWS 서버리스 아키텍처
 
 ---
 
-## 기술 스택
+## 아키텍처 한눈에 보기
 
-| 기술 | 용도 |
+```
+[수집/추론 파이프라인]                         [서빙]
+
+기상청/에어코리아 공공 API                       사용자 브라우저 (PWA)
+   │  (Step Functions Distributed Map)            │
+   ▼                                              ▼
+ 수집 Lambda들 ──► S3(raw) / DynamoDB        Vue SPA (S3 정적 호스팅)
+   │  실황·예보·대기질·자외선                      │  fetch
+   ▼                                              ▼
+ AI 배치(Bedrock) ──► recommend-cache        recommendAPI Lambda (Function URL)
+   (27,000 패턴 사전 생성)                        │  DynamoDB 조회만 (실시간 추론 X)
+                                                  ▼
+                                          weather/air/forecast/recommend-cache
+```
+
+- **추천은 미리 생성(배치)** 되어 `recommend-cache`에 저장됩니다. 서빙 Lambda는 **DynamoDB 조회만** 하므로 빠르고 저렴합니다(요청 시 Bedrock 호출 없음).
+- **수집은 Step Functions(Distributed Map)** 으로 전국 격자/측정소를 병렬 처리합니다.
+
+---
+
+## 모듈 구성
+
+| 폴더 | 역할 | 런타임/스택 | 배포 |
+|------|------|------------|------|
+| [`frontend/`](frontend/) | Vue 3 SPA + PWA (날씨·OOTD·지역검색) | Vue CLI(webpack), Vitest | `deploy-frontend.yml` → S3 |
+| [`backend/`](backend/) | 추천/날씨 서빙 API (단일 Lambda) | Python, Lambda Function URL | `deploy-all-lambdas.yml` |
+| [`data_pipeline/`](data_pipeline/) | 예보·대기질·자외선 수집 Lambda들 | Python, Step Functions | `deploy-all-lambdas.yml` |
+| [`real_time/`](real_time/) | 초단기실황·대기질 실시간 수집 | Python, Step Functions | `deploy-all-lambdas.yml` |
+| [`ai_pipeline/`](ai_pipeline/) | Bedrock 배치로 27,000 패턴 추천 생성 | Python, Bedrock Batch | `deploy-all-lambdas.yml` |
+| [`infra/`](infra/) | 공통 리소스(버킷/테이블) 참고 템플릿·문서 | CloudFormation(참고용) | 콘솔 수동 |
+
+---
+
+## 데이터 저장소 (DynamoDB)
+
+| 테이블 | 키 | 내용 | 쓰는 곳 | TTL |
+|--------|----|------|---------|-----|
+| `inhatc-team2-5-weather-cache` | `region_code`(PK) + `category`(SK) | 초단기실황(기온/습도/풍속)·자외선 | `real_time/weather_worker` | – |
+| `inhatc-team2-5-air-cache` | `stationKey`(PK) | 실시간 대기오염(PM10/PM2.5/O3…) | `real_time`(air) | – |
+| `inhatc-team2-5-forecast-cache` | `region_code`(PK) + `forecast_key`(SK) | 초단기예보(시간별 기온/강수/하늘) | `data_pipeline/forecast_worker` | `expireAt` |
+| `inhatc-team2-1-recommend-cache` | `PK="weather_pattern"` + `SK`(패턴키) | AI 옷차림 추천(사전 생성) | `ai_pipeline/batch_save` | 영구 |
+
+> 표의 SK는 코드 기준입니다. 실제 리소스는 콘솔에서 관리됩니다(아래 "배포/인프라" 참고).
+
+서빙 Lambda는 사용자 지역코드로 위 4개 테이블을 조회해 응답을 조립합니다.
+
+---
+
+## 서빙 API (Lambda Function URL)
+
+| 경로 | 설명 |
 |------|------|
-| Python 3.11+ | 런타임 |
-| FastAPI | REST API 프레임워크 |
-| Mangum | FastAPI → Lambda 어댑터 |
-| Lambda Function URL | API 엔드포인트 |
-| Amazon Bedrock | AI 추천 생성 (Claude 3.5 Haiku) |
-| Amazon DynamoDB | AI 답변 캐시 저장소 |
-| boto3 | AWS SDK (DynamoDB, S3, Bedrock 접근) |
-| pytest | 테스트 프레임워크 |
+| `GET /weather?region=<지역명>` 또는 `?region_code=<코드>` | 현재 기온·체감·미세먼지·자외선 + 시간별 예보(`tempForecast`/`forecastTimes`/`rain`/`sky`) |
+| `GET /recommend?region=...` | 기상 패턴키(SK)로 `recommend-cache`에서 옷차림 추천 조회 |
+
+응답 예시는 `backend/README.md` 참고.
 
 ---
 
-## 추천 응답 흐름
-
-```
-사용자 요청 (위치 + 날씨)
-  → 기상 조건으로 DynamoDB 파티션 키 생성
-  → DynamoDB 캐시 조회
-    → 캐시 히트: 저장된 AI 답변 즉시 반환
-    → 캐시 미스: Bedrock 실시간 호출 (프롬프트 캐싱 적용)
-      → 응답을 DynamoDB에 저장 후 반환
-```
-
-대부분의 기상 패턴은 전날 자정 배치 추론으로 사전 캐싱되어 있으므로, 실시간 Bedrock 호출은 예외적인 경우에만 발생합니다.
-
----
-
-## 로컬 실행
+## 로컬 개발
 
 ```bash
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload
+# 프론트엔드
+cd frontend
+npm ci
+npm run serve        # 개발 서버
+npm run test:unit    # 단위 테스트(Vitest)
+npm run build        # 프로덕션 빌드(dist/)
 ```
 
-`http://localhost:8000`에서 실행됩니다.
-API 문서는 `http://localhost:8000/docs` (Swagger UI)에서 확인할 수 있습니다.
+> 프론트는 카카오맵 키가 필요합니다. `frontend/README.md`의 환경변수 참고.
+> 백엔드/파이프라인 Lambda 로컬 실행은 각 모듈 README 참고.
 
 ---
 
-## 환경 변수
+## 배포 / 인프라
 
-`.env.example`을 `.env`로 복사한 뒤 값을 채워주세요.
+- **코드 배포는 GitHub Actions가 자동 수행**합니다.
+  - 프론트: `frontend/**` 변경 → 빌드 후 `s3://inhatc-team2-3-frontend` 동기화
+  - 람다: `backend|data_pipeline|real_time|ai_pipeline/**` 변경 → `aws lambda update-function-code`
+- **인프라(버킷/테이블/Step Functions/스케줄)는 AWS 콘솔에서 수동 관리**합니다.
+  - 학교 계정의 비용관리 태그 정책 때문에 `sam deploy`를 쓸 수 없어, SAM/CFN 템플릿은 **참고용**입니다. (`infra/README.md` 참고)
 
-| 변수명 | 설명 | 예시 |
-|--------|------|------|
-| `DYNAMODB_TABLE_NAME` | AI 추천 캐시 테이블명 | `inhatc-team2-1-recommend-cache` |
-| `S3_BUCKET_NAME` | 원본 데이터 버킷명 | `inhatc-team2-5-raw-data` |
-| `WEATHER_API_KEY` | 기상청 API 인증키 | 공공데이터포털에서 발급 |
-| `BEDROCK_MODEL_ID` | Bedrock 모델 ID | `anthropic.claude-3-5-haiku-20241022-v1:0` |
-
----
-
-## 폴더 구조
-
-```
-backend/
-├── app/
-│   ├── main.py           # FastAPI 앱 + Mangum 핸들러
-│   ├── routers/          # 엔드포인트별 라우터
-│   ├── services/
-│   │   ├── recommend.py  # 추천 로직 (캐시 조회 → Bedrock 호출)
-│   │   ├── bedrock.py    # Bedrock 클라이언트 및 프롬프트 관리
-│   │   ├── cache.py      # DynamoDB 캐시 읽기/쓰기
-│   │   └── weather.py    # 기상 데이터 조회
-│   ├── models/           # Pydantic 스키마
-│   ├── prompts/          # 시스템 프롬프트 템플릿
-│   ├── utils/            # 유틸리티 함수
-│   └── config.py         # 환경 변수 로드
-├── tests/
-│   ├── test_recommend.py
-│   ├── test_cache.py
-│   └── conftest.py
-├── requirements.txt
-├── template.yaml          # SAM 템플릿 (참고용 - 실제 배포에 사용하지 않음, 아래 주의사항 참고)
-├── .env.example
-└── README.md
-```
+### 운영 체크리스트
+- GitHub Secret `KAKAO_API_KEY` 등록 (없으면 배포 사이트 지도 미표시)
+- `forecast-cache` 테이블 TTL 속성 `expireAt` 활성화
+- 수집 Step Functions의 EventBridge 스케줄 활성 상태 확인 (멈추면 화면에 옛 데이터 노출)
 
 ---
 
-## 테스트
+## 기술 스택 요약
 
-```bash
-# 전체 테스트
-pytest
-
-# 특정 파일
-pytest tests/test_recommend.py
-
-# 커버리지 포함
-pytest --cov=app
-```
-
-CI/CD 파이프라인에서 pytest가 실패하면 배포가 중단됩니다. PR 올리기 전에 로컬에서 반드시 테스트를 돌려주세요.
-
----
-
-## Bedrock 연동 참고사항
-
-### 프롬프트 캐싱
-
-캐시 미스로 Bedrock를 실시간 호출할 때, **프롬프트 캐싱**을 적용하여 반복되는 시스템 지시어의 토큰 처리를 건너뜁니다. 이를 통해 토큰 비용과 응답 시간을 절감합니다.
-
-### 프롬프트 관리
-
-시스템 프롬프트는 `app/prompts/` 폴더에서 관리합니다. 프롬프트 변경 시 주의사항:
-- 변경 후 반드시 여러 기상 패턴으로 테스트하여 환각(hallucination) 발생 여부 확인
-- 공식 기준(기상청 기준, 의류 가이드라인 등)을 프롬프트에 포함하여 답변 신뢰성 확보
-- 프롬프트 변경은 PR에 변경 사유와 테스트 결과를 함께 기재
-
-### DynamoDB 캐시 키 설계
-
-파티션 키는 기상 조건(기온, 습도, 강수 확률 등)의 조합으로 구성됩니다. 키 설계 변경 시 기존 캐시가 무효화될 수 있으므로 데이터 팀과 반드시 협의하세요.
-
-### 로컬에서 Bedrock 테스트
-
-로컬에서 Bedrock를 호출하려면 AWS 자격 증명이 필요합니다. dev 환경의 자격 증명을 사용하되, 불필요한 반복 호출을 피하세요 (토큰 과금). 테스트 시에는 DynamoDB 캐시 히트 시나리오 위주로 확인하고, Bedrock 직접 호출 테스트는 최소한으로 진행합니다.
-
----
-
-## 배포
-
-> ⚠️ **SAM CLI 사용 불가**: 학교 AWS 계정의 비용관리 태그 정책으로 인해 `sam build` / `sam deploy`를 사용하면 권한 오류가 발생합니다. **`template.yaml`은 참고용 문서로만 보존하며 실제 배포에 사용하지 않습니다.**
-
-`develop` 또는 `main` 브랜치의 `backend/**` 경로에 Push하면 **GitHub Actions가 자동으로 배포**를 수행합니다.
-
-```yaml
-# .github/workflows/deploy-backend.yml 동작 방식
-cd backend
-zip -r ../deploy.zip .
-aws lambda update-function-code \
-  --function-name inhatc-team2-1-recommendAPI \
-  --zip-file fileb://../deploy.zip
-```
-
-### 수동 배포가 필요한 경우
-
-```bash
-cd backend
-zip -r ../deploy.zip .
-aws lambda update-function-code \
-  --function-name inhatc-team2-1-recommendAPI \
-  --zip-file fileb://../deploy.zip
-```
-
-### Lambda 환경변수 / 트리거 설정 변경
-
-코드가 아닌 Lambda 설정(환경변수, 트리거, 메모리 등)을 변경해야 하는 경우에는 **AWS 콘솔(us-east-1 리전)에서 직접 수정**하세요. `git-sync.html` 가이드를 참고하세요.
-
-### Lambda 패키징 주의사항
-
-- ZIP 배포 시 압축 해제 기준 **250MB 제한**이 있습니다.
-- 의존성이 늘어나면 Lambda Layer로 분리하거나 컨테이너 이미지 배포를 검토하세요.
-- `requirements.txt`에 불필요한 패키지가 포함되지 않도록 관리해 주세요.
-
----
-
-## 개발 시 참고사항
-
-### DynamoDB 접근
-
-- 로컬 개발 시: [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html) 또는 dev 환경 테이블 사용
-- **prod 테이블에 직접 접근 금지**
-- boto3 클라이언트 생성 시 `region_name="us-east-1"` 명시
-
-### API 버전 관리
-
-엔드포인트 경로에 버전 접두사를 사용합니다: `/api/v1/weather`, `/api/v1/recommend`
-breaking change가 필요하면 `/api/v2/...`로 새 버전을 추가하고, 기존 버전은 일정 기간 유지합니다.
+`Vue 3` · `PWA` · `AWS Lambda(Function URL)` · `DynamoDB` · `S3` · `Step Functions(Distributed Map)` · `EventBridge` · `Amazon Bedrock(Claude Haiku, Batch)` · `기상청/에어코리아 공공 API` · `GitHub Actions(OIDC)`

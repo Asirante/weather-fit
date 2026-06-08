@@ -262,8 +262,26 @@ def query_forecast(region_code):
 
 
 def parse_forecast_series(forecast_items):
+    # 누적된 과거 발표분 제거:
+    # 가장 최근 발표(baseDate+baseTime) 기준 항목만 사용
+    # (build_pattern의 일교차/최저기온이 지난 날까지 섞여 계산되는 것 방지)
+    latest_base = ""
+    for item in forecast_items:
+        b = (
+            f"{item.get('baseDate', '')}"
+            f"{item.get('baseTime', '')}"
+        )
+        if b > latest_base:
+            latest_base = b
+
     series = {}
     for item in forecast_items:
+        b = (
+            f"{item.get('baseDate', '')}"
+            f"{item.get('baseTime', '')}"
+        )
+        if latest_base and b != latest_base:
+            continue
         cat = item.get("category", "")
         fcst_time = item.get("fcstDate", "") + item.get(
             "fcstTime", ""
@@ -511,28 +529,64 @@ def lambda_handler(event, context):
 
         elif path == "/weather":
             forecast_items = query_forecast(region_code)
-            series = parse_forecast_series(forecast_items)
+
+            # 누적된 과거 예보 제거:
+            # 가장 최근 발표(baseDate+baseTime) 기준 항목만 사용
+            latest_base = ""
+            for it in forecast_items:
+                b = (
+                    f"{it.get('baseDate', '')}"
+                    f"{it.get('baseTime', '')}"
+                )
+                if b > latest_base:
+                    latest_base = b
+
+            # 예보 시각별로 카테고리 값 모으기 (최신 base만)
+            by_time = {}
+            for it in forecast_items:
+                b = (
+                    f"{it.get('baseDate', '')}"
+                    f"{it.get('baseTime', '')}"
+                )
+                if latest_base and b != latest_base:
+                    continue
+                ft = (
+                    f"{it.get('fcstDate', '')}"
+                    f"{it.get('fcstTime', '')}"
+                )
+                cat = it.get("category", "")
+                if not ft or not cat:
+                    continue
+                by_time.setdefault(ft, {})[cat] = it.get(
+                    "fcstValue", ""
+                )
+
+            # 예보 시각 오름차순 (실제 시각 = 라벨 정합성 확보)
+            forecast_times = sorted(by_time.keys())
 
             temp_list = [
-                safe_float(v["value"])
-                for v in series.get("T1H", [])
+                safe_float(by_time[t].get("T1H"))
+                for t in forecast_times
             ]
             rain_list = [
-                v["value"] for v in series.get("RN1", [])
+                by_time[t].get("RN1", "강수없음")
+                for t in forecast_times
             ]
             pty_list = [
-                v["value"] for v in series.get("PTY", [])
+                by_time[t].get("PTY", "0")
+                for t in forecast_times
             ]
             sky_list = [
-                v["value"] for v in series.get("SKY", [])
+                by_time[t].get("SKY", "1")
+                for t in forecast_times
             ]
             reh_list = [
-                safe_float(v["value"])
-                for v in series.get("REH", [])
+                safe_float(by_time[t].get("REH"))
+                for t in forecast_times
             ]
             wsd_list = [
-                safe_float(v["value"])
-                for v in series.get("WSD", [])
+                safe_float(by_time[t].get("WSD"))
+                for t in forecast_times
             ]
 
             # 시간대별 체감온도 (기온 배열 기준, 같은 인덱스의 습도/풍속 사용)
@@ -603,6 +657,7 @@ def lambda_handler(event, context):
                 "feelsLike": current_feels_like,
                 "tempForecast": temp_list,
                 "feelsLikeForecast": feels_like_forecast,
+                "forecastTimes": forecast_times,
                 "rain": rain_list,
                 "sky": sky_result,
                 "uv": uv_max,

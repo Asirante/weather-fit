@@ -262,12 +262,11 @@ def save_nowcast_to_dynamodb(api_data, table_name):
 
 
 def read_latest_uv_index_csv(bucket, prefix):
-    response = s3_client.list_objects_v2(
-        Bucket=bucket,
-        Prefix=prefix
-    )
-
-    objects = response.get("Contents", [])
+    # 페이지네이션: 파일이 1000개를 넘어도 최신 CSV를 놓치지 않도록 전체 조회
+    objects = []
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        objects.extend(page.get("Contents", []))
 
     csv_files = [
         obj for obj in objects

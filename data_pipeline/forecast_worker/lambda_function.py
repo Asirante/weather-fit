@@ -19,10 +19,20 @@ logger.setLevel(logging.INFO)
 
 ENDPOINT = "/getUltraSrtFcst"
 
+# 예보 항목 TTL: 대상시각 + 버퍼(기본 12시간) 후 자동 삭제
+FORECAST_TTL_SECONDS = int(
+    os.environ.get("FORECAST_TTL_SECONDS", str(12 * 3600))
+)
+
 
 def get_base_datetime():
-    now = datetime.now(ZoneInfo("Asia/Seoul")) - timedelta(hours=1)
-    return now.strftime("%Y%m%d"), now.strftime("%H00")
+    # 초단기예보(getUltraSrtFcst)는 매시 30분 발표, 45분 이후 제공.
+    # 따라서 base_time은 HH30이며, 45분 이전이면 직전 시각의 30분을 사용.
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    if now.minute < 45:
+        now = now - timedelta(hours=1)
+    base = now.replace(minute=30, second=0, microsecond=0)
+    return base.strftime("%Y%m%d"), base.strftime("%H%M")
 
 
 def call_api(location):
@@ -144,6 +154,19 @@ def save_forecast_to_dynamodb(rows, table_name):
                 item["forecast_key"] = (
                     f"{row['fcstDate']}#{row['fcstTime']}#{row['category']}"
                 )
+
+                # DynamoDB TTL: 예보 대상시각 + 버퍼 이후 자동 삭제
+                # (지나간 예보가 누적되지 않도록)
+                try:
+                    fdt = datetime.strptime(
+                        f"{row['fcstDate']}{row['fcstTime']}",
+                        "%Y%m%d%H%M",
+                    ).replace(tzinfo=ZoneInfo("Asia/Seoul"))
+                    item["expireAt"] = (
+                        int(fdt.timestamp()) + FORECAST_TTL_SECONDS
+                    )
+                except Exception:
+                    pass
 
                 batch.put_item(Item=item)
                 saved_count += 1
