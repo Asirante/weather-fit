@@ -15,6 +15,9 @@ def call_api(endpoint, extra_params=None):
     base_url = os.environ.get("AIR_INFO_API_URL")
     service_key = os.environ.get("WEATHER_API_KEY")
 
+    if not base_url or not service_key:
+        raise ValueError("Missing AIR_INFO_API_URL or WEATHER_API_KEY")
+
     params = {
         "serviceKey": service_key,
         "returnType": "json",
@@ -29,7 +32,7 @@ def call_api(endpoint, extra_params=None):
     url = f"{base_url}{endpoint}?{urlencode(params)}"
     request = Request(url, method="GET")
 
-    with urlopen(request) as response:
+    with urlopen(request, timeout=15) as response:
         return json.loads(response.read().decode("utf-8"))
 
 def get_minu_dust_week_frcst_dspth():

@@ -88,8 +88,12 @@ const requestWeatherOnce = async (encodedRegion) => {
     };
 };
 
+// 최신 요청 추적 (지역을 빠르게 바꿀 때 오래된 응답이 화면을 덮어쓰지 않도록)
+let activeRequestId = 0;
+
 export const fetchWeatherData = async (regionName) => {
-    if (currentWeather.value?.location === regionName) return;
+    // 동일 지역도 항상 최신 데이터로 새로고침 (현재위치/다시시도 버튼이 동작하도록)
+    const requestId = ++activeRequestId;
 
     isLoading.value = true;
     errorMessage.value = '';
@@ -109,6 +113,9 @@ export const fetchWeatherData = async (regionName) => {
                 await sleep(500 * attempt); // 0.5s, 1s
             }
         }
+
+        // 더 새로운 요청이 시작됐다면 이 응답은 버림 (레이스 방지)
+        if (requestId !== activeRequestId) return;
 
         // 🌟 백엔드 변경 1: 현재 기온과 예보 기온 분리
         const currentTemp = weatherData.temp !== undefined ? Math.round(Number(weatherData.temp)) : 15;
@@ -203,6 +210,8 @@ export const fetchWeatherData = async (regionName) => {
         });
 
     } catch (error) {
+        // 오래된(중첩된) 요청의 실패는 화면에 반영하지 않음
+        if (requestId !== activeRequestId) return;
         console.error('데이터 호출 중 오류 발생:', error);
         errorMessage.value = '정보를 가져오는 중 오류가 발생했습니다.';
         currentWeather.value = null;
@@ -210,6 +219,7 @@ export const fetchWeatherData = async (regionName) => {
         hourlyData.value = [];
         hourlyOutfitData.value = [];
     } finally {
-        isLoading.value = false;
+        // 최신 요청일 때만 로딩 해제 (오래된 요청이 새 로딩을 끄지 않도록)
+        if (requestId === activeRequestId) isLoading.value = false;
     }
 };

@@ -18,12 +18,14 @@
                         aria-controls="autocomplete-list"
                         aria-autocomplete="list"
                         :aria-expanded="showAutoComplete && filteredLocations.length > 0"
+                        :aria-activedescendant="activeIndex >= 0 ? ('ac-opt-' + activeIndex) : undefined"
                     />
 
                     <ul v-if="showAutoComplete && filteredLocations.length > 0" id="autocomplete-list" class="autocomplete-list" role="listbox">
                         <li
                             v-for="(loc, index) in filteredLocations"
-                            :key="index"
+                            :key="loc"
+                            :id="'ac-opt-' + index"
                             @click="selectLocation(loc)"
                             @mouseenter="activeIndex = index"
                             class="autocomplete-item"
@@ -47,12 +49,17 @@
                         최근 검색한 내역이 없습니다.
                     </div>
 
-                    <div 
+                    <div
                         v-else
-                        v-for="(history, index) in searchHistory" 
-                        :key="index" 
-                        class="result-card" 
+                        v-for="(history, index) in searchHistory"
+                        :key="history"
+                        class="result-card"
+                        role="button"
+                        tabindex="0"
+                        :aria-label="history + ' 날씨 보기'"
                         @click="clickHistory(history)"
+                        @keydown.enter.prevent="clickHistory(history)"
+                        @keydown.space.prevent="clickHistory(history)"
                     >
                         <h3 class="result-name">🕒 {{ history }}</h3>
                         <button class="delete-btn" @click.stop="removeHistory(index)" title="기록 삭제" aria-label="검색 기록 삭제">✕</button>
@@ -151,12 +158,16 @@
     let geocoder = null;
     let currentPolygons = []; 
 
+    // 전국 동 이름 목록은 데이터 로드 시 한 번만 계산(중복 제거) — 키 입력마다 재계산 방지
+    const uniqueNames = computed(() => {
+        return [...new Set(sggData.value.map(f => f.properties.adm_nm))];
+    });
+
     const filteredLocations = computed(() => {
         if (!searchQuery.value) return [];
         const query = searchQuery.value.toLowerCase();
-        const names = sggData.value.map(f => f.properties.adm_nm);
-        // 중복 제거 후 최대 MAX_SUGGESTIONS개만 노출 (전국 동 전체 렌더링 방지)
-        return [...new Set(names)]
+        // 미리 만든 이름 목록에서 필터 + 최대 MAX_SUGGESTIONS개만 노출
+        return uniqueNames.value
             .filter(name => name.toLowerCase().includes(query))
             .slice(0, MAX_SUGGESTIONS);
     });
@@ -172,12 +183,14 @@
         loadKakaoMap();
     });
 
-    const loadKakaoMap = () => {
+    const loadKakaoMap = (retryCount = 0) => {
         if (window.kakao && window.kakao.maps) {
             window.kakao.maps.load(() => initMap());
+        } else if (retryCount < 20) {
+            // SDK 로드 대기 (최대 약 6초). 무한 폴링 방지를 위해 횟수 제한.
+            setTimeout(() => loadKakaoMap(retryCount + 1), 300);
         } else {
-            console.log("카카오맵 SDK 대기 중...");
-            setTimeout(loadKakaoMap, 300);
+            console.error("카카오맵 SDK 로드 실패 (키/네트워크 확인 필요)");
         }
     };
 
@@ -284,7 +297,7 @@
                 showBottomPanel.value = true;
 
                 await fetchWeatherData(officialName);
-                isUnsupported.value = !!errorMessage.value || (currentWeather.value?.location.includes('지원하지 않'));
+                isUnsupported.value = !!errorMessage.value || (currentWeather.value?.location?.includes('지원하지 않') ?? false);
 
                 searchQuery.value = officialName;
                 addToHistory(officialName);
