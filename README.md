@@ -62,7 +62,7 @@
 
 | 경로 | 설명 |
 |------|------|
-| `GET /weather?region=<지역명>` 또는 `?region_code=<코드>` | 현재 기온·체감·미세먼지·자외선 + 시간별 예보(`tempForecast`/`forecastTimes`/`rain`/`sky`) |
+| `GET /weather?region=<지역명>` 또는 `?region_code=<코드>` | 현재 기온·체감·미세먼지 + 시간별 예보(`tempForecast`/`forecastTimes`/`rain`/`sky`/`uvForecast` — 자외선은 시각별) |
 | `GET /recommend?region=...` | 기상 패턴키(SK)로 `recommend-cache`에서 옷차림 추천 조회 |
 
 응답 예시는 `backend/README.md` 참고.
@@ -97,6 +97,7 @@ npm run build        # 프로덕션 빌드(dist/)
 - GitHub Secret `KAKAO_API_KEY` 등록 (없으면 배포 사이트 지도 미표시)
 - `forecast-cache` 테이블 TTL 속성 `expireAt` 활성화
 - 수집 Step Functions의 EventBridge 스케줄 활성 상태 확인 (멈추면 화면에 옛 데이터 노출)
+  - 차등 주기: 실황·미세먼지 `1시간` / 초단기예보 `3시간` / 자외선·대기확산 `6시간`
 
 ---
 

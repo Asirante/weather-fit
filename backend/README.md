@@ -35,12 +35,13 @@ backend/
   "tempForecast": [27, 26, 25, ...], "feelsLikeForecast": [...],
   "forecastTimes": ["202606071900", ...],
   "rain": ["강수없음", ...], "sky": ["흐림", ...],
-  "uv": 0.0, "o3": 0.038,
+  "uv": 0.0, "uvForecast": [3.0, 5.0, ...], "o3": 0.038,
   "pm10": 32.0, "pm10Grade": "2", "pm25": 15.0, "pm25Grade": "1"
 }
 ```
 - **체감온도**(`feelsLike`)는 캐시의 풍속(WSD)/습도(REH)로 기상청 공식(저온=풍속냉각, 고온=습도식) 계산.
 - **시간별 예보**는 "가장 최근 발표(baseDate+baseTime) 기준"만 사용하고 실제 예보시각(`forecastTimes`)을 함께 반환(누적 잔재 제거).
+- **자외선**(V5)은 발표시각 기준 3시간 단위(`h0/h3/.../h75`)이므로, hN의 실제시각(=발표시각+N시간)으로 정렬해 예보 시각별 값을 `uvForecast`로 반환(프론트 시간별 상세에 표시). `/recommend` 패턴키의 `uv_level`은 **현재 시각 기준 now~+6h 최댓값**으로 산정.
 
 ### `/recommend` 패턴키(SK)
 `temp:{zone}|diff:{lvl}|rain:{lvl}|pm:{grade}|wind:{lvl}|uv:{lvl}|pty:{type}` 형식.

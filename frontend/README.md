@@ -62,7 +62,7 @@ frontend/
 │   └── *.json                   # 행정동 GeoJSON 등
 ├── src/
 │   ├── components/
-│   │   ├── WeatherFitHome.vue   # 홈: 현재날씨 + OOTD + 인터랙티브 마스크 + 시간별 예보(상세 패널)
+│   │   ├── WeatherFitHome.vue   # 홈: 현재날씨 + OOTD + 인터랙티브 마스크 + 시간별 예보(상세 패널: 기온·체감·강수·자외선)
 │   │   └── WeatherFitSearch.vue # 지역 검색 + 카카오 지도
 │   ├── stores/
 │   │   ├── useWeather.js        # 날씨/추천 fetch + 매핑 (ref 기반 전역 상태)
@@ -84,7 +84,7 @@ frontend/
 ### 백엔드 연동
 `src/stores/useWeather.js`가 **Lambda Function URL을 직접 호출**합니다(`/weather`, `/recommend` 병렬).
 타임아웃(AbortController) + 지수 백오프 재시도 + 최신 요청만 반영(레이스 방지)이 적용되어 있습니다.
-응답 필드(`feelsLike`, `uv`, `forecastTimes`, `acc` 등)는 백엔드 변경에도 안전하도록 방어적으로 매핑합니다.
+응답 필드(`feelsLike`, `uvForecast`, `forecastTimes`, `acc` 등)는 백엔드 변경에도 안전하도록 방어적으로 매핑합니다. 자외선은 `uvForecast`를 시간별 데이터에 매핑해 **시간별 예보 상세 패널(선택 시각 기준)** 에 표시합니다(현재날씨 카드에서 이동).
 
 ### 위치
 Geolocation은 **HTTPS(또는 localhost)** 에서만 동작합니다. 권한 거부 시 최근 검색 → 기본 지역 순으로 폴백합니다.
