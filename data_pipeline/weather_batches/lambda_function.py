@@ -18,8 +18,10 @@ LOCATION_BUCKET = "inhatc-team2-5-raw-data"
 LOCATION_KEY = "location.csv"
 
 ENDPOINTS = {
-    "uv_index": "/getUVIdxV4",
-    "air_diffusion": "/getAirDiffusionIdxV4"
+    # 생활기상지수 조회서비스 현행 버전(V5). 발표시각 기준 3시간 단위 예측값을 반환.
+    # 자외선 h0~h75, 대기확산 h3~h78. (대기확산은 현재 서비스에서 미사용)
+    "uv_index": "/getUVIdxV5",
+    "air_diffusion": "/getAirDiffusionIdxV5"
 }
 
 

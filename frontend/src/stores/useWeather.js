@@ -137,16 +137,15 @@ export const fetchWeatherData = async (regionName) => {
             updateTime.setMinutes(Math.floor(updateTime.getMinutes() / 30) * 30);
         }
 
-        // UV 지수 (구버전 백엔드 대비 방어)
-        const uvValue = weatherData.uv != null ? Number(weatherData.uv) : null;
+        // 자외선: 시간별 예보 각 시각의 값 (발표시각+offset으로 백엔드에서 정렬)
+        // 구버전 백엔드 대비 방어
+        const uvForecast = weatherData.uvForecast || [];
 
         // 1. 현재 날씨 데이터 매핑
         currentWeather.value = {
             location: regionName,
             temp: currentTemp,
             feelsLike: currentFeelsLike,
-            uv: uvValue,
-            uvLevel: getUvLevel(uvValue),
             pm10Status: getDustStatusText(weatherData.pm10Grade),
             pm10: weatherData.pm10 || 0,
             pm25Status: getDustStatusText(weatherData.pm25Grade),
@@ -187,6 +186,7 @@ export const fetchWeatherData = async (regionName) => {
 
         // 3. 시간별 예보 데이터 동적 매핑
         hourlyData.value = tempForecast.map((tempStr, index) => {
+            const uvVal = uvForecast[index] != null ? Number(uvForecast[index]) : null;
             return {
                 time: labelForIndex(index),
                 temp: Math.round(Number(tempStr)),
@@ -194,7 +194,9 @@ export const fetchWeatherData = async (regionName) => {
                 rain: rainArray[index] || '강수없음',
                 sky: skyArray[index] || '맑음',
                 pm25: weatherData.pm25 || 0,
-                pm25Status: getDustStatusText(weatherData.pm25Grade)
+                pm25Status: getDustStatusText(weatherData.pm25Grade),
+                uv: uvVal,
+                uvLevel: getUvLevel(uvVal)
             };
         });
 

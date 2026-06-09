@@ -4,9 +4,13 @@ import boto3
 import os
 from urllib.parse import parse_qs
 from decimal import Decimal
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from boto3.dynamodb.conditions import Key
 
 from mapping import gu_to_station, region_to_code
+
+KST = ZoneInfo("Asia/Seoul")
 
 IS_LOCAL = os.environ.get("AWS_SAM_LOCAL") == "true"
 
@@ -209,6 +213,51 @@ def get_uv_level(uv_max):
         return "low"
 
 
+def _uv_announce_dt(uv_item):
+    # 자외선 응답의 date = 발표시각("YYYYMMDDHH")
+    date_str = str(uv_item.get("date", "")).strip()
+    try:
+        return datetime.strptime(date_str, "%Y%m%d%H").replace(tzinfo=KST)
+    except Exception:
+        return None
+
+
+def uv_value_at(uv_item, target_dt):
+    # 자외선(getUVIdxV5)은 발표시각 기준 3시간 단위 예측값 hN을 반환한다.
+    # (hN의 실제 시각 = 발표시각 + N시간)
+    # 대상 시각에 가장 가까운 3시간 단위 컬럼 값을 돌려준다. (없으면 None)
+    if not uv_item or target_dt is None:
+        return None
+
+    base = _uv_announce_dt(uv_item)
+    if base is None:
+        return None
+
+    offset = int(round((target_dt - base).total_seconds() / 3600.0 / 3.0) * 3)
+    offset = max(0, min(offset, 75))
+
+    raw = uv_item.get(f"h{offset}")
+    if raw is None or str(raw).strip() == "":
+        return None
+    return safe_float(raw)
+
+
+def uv_max_now(uv_item):
+    # 추천 키(SK) 산정용: 측정/발표 시각이 아니라 "현재 시각" 기준으로
+    # now ~ +6시간(now, +3h, +6h)의 최대 자외선을 사용한다.
+    if not uv_item:
+        return 0.0
+
+    now = datetime.now(KST)
+    values = []
+    for h in (0, 3, 6):
+        v = uv_value_at(uv_item, now + timedelta(hours=h))
+        if v is not None:
+            values.append(v)
+
+    return max(values) if values else 0.0
+
+
 def get_pty_type(pty_codes):
     codes = [str(c).strip() for c in pty_codes]
     if "3" in codes:
@@ -353,12 +402,7 @@ def build_pattern(weather_map, forecast_items, air_data):
         wind_level = get_wind_level(wsd)
 
     uv_item = weather_map.get("UV_INDEX", {})
-    uv_max = max(
-        safe_float(uv_item.get("h0")),
-        safe_float(uv_item.get("h3")),
-        safe_float(uv_item.get("h6")),
-    )
-    uv_level = get_uv_level(uv_max)
+    uv_level = get_uv_level(uv_max_now(uv_item))
 
     pty_values = series.get("PTY", [])
     if pty_values:
@@ -632,11 +676,18 @@ def lambda_handler(event, context):
             )
 
             uv_item = weather_map.get("UV_INDEX", {})
-            uv_max = max(
-                safe_float(uv_item.get("h0")),
-                safe_float(uv_item.get("h3")),
-                safe_float(uv_item.get("h6")),
-            )
+            uv_max = uv_max_now(uv_item)
+
+            # 시간별 예보 각 시각의 자외선 (발표시각+offset으로 정렬)
+            uv_forecast = []
+            for t in forecast_times:
+                try:
+                    tdt = datetime.strptime(
+                        str(t), "%Y%m%d%H%M"
+                    ).replace(tzinfo=KST)
+                except Exception:
+                    tdt = None
+                uv_forecast.append(uv_value_at(uv_item, tdt))
 
             base_date = ""
             base_time = ""
@@ -661,6 +712,7 @@ def lambda_handler(event, context):
                 "rain": rain_list,
                 "sky": sky_result,
                 "uv": uv_max,
+                "uvForecast": uv_forecast,
                 "o3": air_data.get("o3Value"),
                 "pm10": air_data.get("pm10Value"),
                 "pm10Grade": air_data.get("pm10Grade"),
