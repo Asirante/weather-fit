@@ -16,7 +16,7 @@ data_pipeline/
 ├── forecast_batches/             # 격자 분할 → 매니페스트(S3) 생성
 ├── forecast_worker/              # 초단기예보(getUltraSrtFcst) → forecast-cache + S3 (TTL: expireAt)
 ├── forecast_merge/               # 배치 CSV 병합 → S3
-├── weather_batches/              # 자외선(getUVIdxV4)·대기확산 수집 → S3
+├── weather_batches/              # 자외선(getUVIdxV5)·대기확산(getAirDiffusionIdxV5) 수집 → S3
 ├── weather_merge/                # 배치 CSV 병합 → S3
 └── README.md
 ```
@@ -45,6 +45,8 @@ data_pipeline/
 ```
 
 > 상태머신 정의(ASL)와 EventBridge 스케줄은 **콘솔에서 관리**되며 레포에는 포함되지 않습니다.
+>
+> **수집 주기(EventBridge Scheduler, 데이터 특성별 차등):** 실황·미세먼지 `1시간` / 초단기예보 `3시간` / 자외선·대기확산 `6시간`. 각 람다는 실행 시점 기준으로 base_time을 계산하므로 주기만 바꾸면 됩니다(코드 변경 불필요).
 
 ---
 
@@ -53,7 +55,7 @@ data_pipeline/
 | API | 호출 위치 | 적재 |
 |-----|----------|------|
 | 기상청 초단기예보 `getUltraSrtFcst` | `forecast_worker` | forecast-cache (+S3) |
-| 생활기상지수 자외선 `getUVIdxV4` / 대기확산 `getAirDiffusionIdxV4` | `weather_batches` | S3 |
+| 생활기상지수 자외선 `getUVIdxV5` / 대기확산 `getAirDiffusionIdxV5` (발표시각 기준 3시간 단위 h0~h75 예측값) | `weather_batches` | S3 |
 | 에어코리아 시도/시군구 평균 | `airStatsAPI` | S3 |
 | 에어코리아 초미세먼지 주간예보 `getMinuDustWeekFrcstDspth` | `airInfoAPI` | S3 |
 
@@ -88,7 +90,7 @@ python -c "from forecast_worker.lambda_function import lambda_handler; print(lam
 ---
 
 ## 알려진 개선 포인트
-- `airStatsAPI`/`airInfoAPI`는 타임아웃을 적용했으나 **재시도 로직이 없음**(다른 워커는 `request_text_with_retry` 보유).
-- merge/UV 탐색의 `list_objects_v2`는 **페이지네이션 없음**(배치 1000개 초과 시 누락 가능).
-- `forecast_worker`는 배치 내 API를 **순차 호출**(`weather_batches`는 스레드풀) — 대량 시 느림.
-- 격자 dedup·배치 분할 로직이 여러 파일에 중복 → 공용화 여지.
+- `forecast_worker`는 배치 내 API를 **순차 호출**합니다(`weather_batches`는 스레드풀). 공공 API 호출 제한(차단) 회피를 위한 **의도적 선택**으로, 대량 처리 시 느릴 수 있습니다.
+- 격자 dedup·배치 분할 로직이 여러 파일에 유사하게 존재 → 공용 모듈로 추출 여지.
+
+> ✅ 해결됨: `airStatsAPI`/`airInfoAPI` **재시도**(`fetch_json_with_retry`, 3회) 추가 · merge/UV 탐색 `list_objects_v2` **페이지네이션**(`get_paginator`) 적용.
