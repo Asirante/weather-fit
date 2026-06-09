@@ -61,7 +61,6 @@
                             <p class="temp-info">현재 기온 {{ currentWeather.temp }}°C</p>
                             <p class="dust-info">미세먼지 {{ currentWeather.pm10Status }} ({{ currentWeather.pm10 }}µg/m³)</p>
                             <p class="dust-info">초미세먼지 {{ currentWeather.pm25Status }} ({{ currentWeather.pm25 }}µg/m³)</p>
-                            <p v-if="currentWeather.uvLevel" class="dust-info">자외선 {{ currentWeather.uvLevel }} ({{ currentWeather.uv }})</p>
                         </div>
                     </div>
                     
@@ -168,6 +167,7 @@
                             <div class="hd-stat"><span class="hd-label">기온</span><span class="hd-value">{{ selectedHourlyWeather.temp }}°C</span></div>
                             <div class="hd-stat" v-if="selectedHourlyWeather.feelsLike != null"><span class="hd-label">체감</span><span class="hd-value">{{ selectedHourlyWeather.feelsLike }}°C</span></div>
                             <div class="hd-stat"><span class="hd-label">강수</span><span class="hd-value">{{ selectedHourlyWeather.rain }}</span></div>
+                            <div class="hd-stat" v-if="selectedHourlyWeather.uvLevel"><span class="hd-label">자외선</span><span class="hd-value">{{ selectedHourlyWeather.uvLevel }} ({{ selectedHourlyWeather.uv }})</span></div>
                         </div>
                     </div>
                 </section>

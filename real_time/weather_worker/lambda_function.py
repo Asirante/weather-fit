@@ -298,9 +298,9 @@ def build_uv_index_items(rows):
     items = []
     updated_at = iso_now_kst()
 
-    keep_columns = [
-        "h0", "h3", "h6"
-    ]
+    # 자외선(getUVIdxV5): 발표시각 기준 3시간 단위 예측값 h0~h75.
+    # 가까운 시간대(향후 약 12시간)만 저장한다. (빈 컬럼은 제외)
+    value_columns = ["h0", "h3", "h6", "h9", "h12"]
 
     for row in rows:
         region_code = str(row.get("areaNo", "")).strip()
@@ -318,8 +318,11 @@ def build_uv_index_items(rows):
             "updatedAt": updated_at,
         }
 
-        for col in keep_columns:
-            item[col] = to_decimal_if_number(row.get(col, ""))
+        for col in value_columns:
+            raw = row.get(col, "")
+            if raw is None or str(raw).strip() == "":
+                continue
+            item[col] = to_decimal_if_number(raw)
 
         items.append(item)
 
