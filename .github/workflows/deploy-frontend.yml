@@ -36,3 +36,8 @@ jobs:
       - name: S3 Sync
         run: |
           aws s3 sync frontend/dist/ s3://inhatc-team2-3-frontend --delete
+      - name: CloudFront Invalidation
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || 'E2OUVLTE2H0EF0' }} \
+            --paths "/*"
