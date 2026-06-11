@@ -38,9 +38,13 @@ export const getWeatherLabel = (rain, sky) => {
  * 추천 상의 텍스트에 어울리는 이모지를 반환한다.
  */
 export const getTopIcon = (top = '') => {
-    if (top.includes('패딩') || top.includes('코트')) return '🧣';
-    if (top.includes('재킷') || top.includes('가죽') || top.includes('야상')) return '🧥';
-    if (top.includes('긴팔') || top.includes('니트') || top.includes('가디건') || top.includes('맨투맨')) return '👔';
+    // 두꺼운 겉옷·방한 → 코트 아이콘
+    if (top.includes('패딩') || top.includes('코트') || top.includes('방한')
+        || top.includes('가죽') || top.includes('재킷') || top.includes('야상')) return '🧥';
+    // 긴팔·니트·후드류 → 긴소매 상의
+    if (top.includes('긴팔') || top.includes('니트') || top.includes('가디건')
+        || top.includes('맨투맨') || top.includes('후드') || top.includes('기모')) return '👔';
+    // 반팔·민소매·얇은 소재 → 반소매 티셔츠
     return '👕';
 };
 

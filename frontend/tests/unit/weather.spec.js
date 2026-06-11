@@ -34,14 +34,18 @@ describe('getWeatherLabel', () => {
 });
 
 describe('getTopIcon', () => {
-    it('두꺼운 외투(패딩/코트)를 우선 판별한다', () => {
-        expect(getTopIcon('롱패딩')).toBe('🧣');
-        expect(getTopIcon('코트')).toBe('🧣');
+    it('두꺼운 외투(패딩/코트/방한복)는 코트 아이콘', () => {
+        expect(getTopIcon('롱패딩')).toBe('🧥');
+        expect(getTopIcon('코트')).toBe('🧥');
+        expect(getTopIcon('두꺼운 롱코트')).toBe('🧥');
+        expect(getTopIcon('방한복')).toBe('🧥');
     });
 
-    it('재킷류와 긴팔류를 구분한다', () => {
+    it('재킷류는 코트, 긴팔/니트/후드류는 긴소매 아이콘', () => {
         expect(getTopIcon('가죽 재킷')).toBe('🧥');
+        expect(getTopIcon('야상')).toBe('🧥');
         expect(getTopIcon('니트, 가디건')).toBe('👔');
+        expect(getTopIcon('후드티')).toBe('👔');
     });
 
     it('해당 없으면 기본 반팔 아이콘', () => {
