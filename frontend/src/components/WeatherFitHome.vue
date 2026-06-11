@@ -168,6 +168,7 @@
                             <div class="hd-stat" v-if="selectedHourlyWeather.feelsLike != null"><span class="hd-label">체감</span><span class="hd-value">{{ selectedHourlyWeather.feelsLike }}°C</span></div>
                             <div class="hd-stat"><span class="hd-label">강수</span><span class="hd-value">{{ selectedHourlyWeather.rain }}</span></div>
                             <div class="hd-stat" v-if="selectedHourlyWeather.uvLevel"><span class="hd-label">자외선</span><span class="hd-value">{{ selectedHourlyWeather.uvLevel }} ({{ selectedHourlyWeather.uv }})</span></div>
+                            <div class="hd-stat" v-if="selectedHourlyWeather.wind != null"><span class="hd-label">풍속</span><span class="hd-value">{{ selectedHourlyWeather.wind }}m/s</span></div>
                         </div>
                     </div>
                 </section>

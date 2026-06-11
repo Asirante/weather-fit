@@ -713,6 +713,7 @@ def lambda_handler(event, context):
                 "sky": sky_result,
                 "uv": uv_max,
                 "uvForecast": uv_forecast,
+                "windForecast": wsd_list,
                 "o3": air_data.get("o3Value"),
                 "pm10": air_data.get("pm10Value"),
                 "pm10Grade": air_data.get("pm10Grade"),
