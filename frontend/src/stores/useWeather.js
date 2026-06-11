@@ -140,6 +140,8 @@ export const fetchWeatherData = async (regionName) => {
         // 자외선: 시간별 예보 각 시각의 값 (발표시각+offset으로 백엔드에서 정렬)
         // 구버전 백엔드 대비 방어
         const uvForecast = weatherData.uvForecast || [];
+        // 풍속: 시간별 예보 각 시각의 값(m/s)
+        const windForecast = weatherData.windForecast || [];
 
         // 1. 현재 날씨 데이터 매핑
         currentWeather.value = {
@@ -187,6 +189,7 @@ export const fetchWeatherData = async (regionName) => {
         // 3. 시간별 예보 데이터 동적 매핑
         hourlyData.value = tempForecast.map((tempStr, index) => {
             const uvVal = uvForecast[index] != null ? Number(uvForecast[index]) : null;
+            const windVal = windForecast[index] != null ? Math.round(Number(windForecast[index]) * 10) / 10 : null;
             return {
                 time: labelForIndex(index),
                 temp: Math.round(Number(tempStr)),
@@ -196,7 +199,8 @@ export const fetchWeatherData = async (regionName) => {
                 pm25: weatherData.pm25 || 0,
                 pm25Status: getDustStatusText(weatherData.pm25Grade),
                 uv: uvVal,
-                uvLevel: getUvLevel(uvVal)
+                uvLevel: getUvLevel(uvVal),
+                wind: windVal
             };
         });
 
